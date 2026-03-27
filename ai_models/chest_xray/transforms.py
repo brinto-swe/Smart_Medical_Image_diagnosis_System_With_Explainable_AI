@@ -1,21 +1,21 @@
 from torchvision import transforms
 
-IMAGE_SIZE = 224
-
-# Training data transformations
 train_transforms = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),  # 🔴 IMPORTANT
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.RandomRotation(10),
+    transforms.Grayscale(num_output_channels=3),   # 🔥 FIX
+    transforms.Resize((256, 256)),
+    transforms.RandomCrop(224),
     transforms.RandomHorizontalFlip(),
+    transforms.RandomVerticalFlip(),
+    transforms.RandomRotation(15),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225]),
 ])
 
-# Validation / Test transformations
 test_transforms = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),  # 🔴 IMPORTANT
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+    transforms.Grayscale(num_output_channels=3),   # 🔥 FIX
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.5], std=[0.5])
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225]),
 ])
