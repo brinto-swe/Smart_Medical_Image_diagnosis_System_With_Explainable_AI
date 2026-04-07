@@ -117,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--freeze_layers", type=int, default=4)
-    parser.add_argument("--output_dir", default="./checkpoints")
+    parser.add_argument("--output_dir", default="/kaggle/working/checkpoints")
 
     args = parser.parse_args()
     main(args)
