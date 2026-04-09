@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from .models import Diagnosis
+from .models import ScanResult
 
-class DiagnosisSerializer(serializers.ModelSerializer):
+
+class ScanResultSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Diagnosis
+        model = ScanResult
         fields = '__all__'

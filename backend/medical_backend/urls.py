@@ -18,12 +18,14 @@ from django.contrib import admin
 from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
-from diagnosis.views import predict_view
+from diagnosis.views import predict_view, create_patient, patient_history
 from rest_framework.authtoken.views import obtain_auth_token
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/create-patient/', create_patient),
     path('api/predict/', predict_view),
+    path('api/history/<int:patient_id>/', patient_history),
     path('api/token/', obtain_auth_token),
 
 ]
