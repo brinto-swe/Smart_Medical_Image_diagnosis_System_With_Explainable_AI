@@ -109,14 +109,15 @@ def search_patient(request):
 
     patients = Patient.objects.filter(name__icontains=query)
 
-    data = []
-    for p in patients:
-        data.append({
+    data = [
+        {
             "id": p.id,
             "name": p.name,
             "age": p.age,
             "gender": p.gender
-        })
+        }
+        for p in patients
+    ]
 
     return Response(data)
 
