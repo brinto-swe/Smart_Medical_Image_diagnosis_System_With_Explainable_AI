@@ -140,3 +140,30 @@ def generate_report(request, scan_id):
 
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+@api_view(['GET'])
+def scan_detail(request, scan_id):
+    try:
+        scan = ScanResult.objects.get(id=scan_id)
+
+        data = {
+            "id": scan.id,
+            "patient": {
+                "id": scan.patient.id,
+                "name": scan.patient.name,
+                "age": scan.patient.age,
+                "gender": scan.patient.gender
+            },
+            "prediction": scan.prediction,
+            "confidence": scan.confidence,
+            "risk_level": scan.risk_level,
+            "original_image": scan.original_image.url,
+            "heatmap_image": scan.heatmap_image.url,
+            "explanation": scan.explanation,
+            "created_at": scan.created_at
+        }
+
+        return Response(data)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
