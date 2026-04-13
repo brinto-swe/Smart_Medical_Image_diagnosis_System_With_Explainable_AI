@@ -101,3 +101,41 @@ def patient_history(request, patient_id):
         return Response(serializer.data)
     except Exception as e:
         return Response({"error": str(e)}, status=500)
+
+
+@api_view(['GET'])
+def search_patient(request):
+    query = request.GET.get('q', '')
+
+    patients = Patient.objects.filter(name__icontains=query)
+
+    data = []
+    for p in patients:
+        data.append({
+            "id": p.id,
+            "name": p.name,
+            "age": p.age,
+            "gender": p.gender
+        })
+
+    return Response(data)
+
+@api_view(['GET'])
+def generate_report(request, scan_id):
+    try:
+        scan = ScanResult.objects.get(id=scan_id)
+
+        report = {
+            "patient_id": scan.patient.id,
+            "prediction": scan.prediction,
+            "confidence": scan.confidence,
+            "risk_level": scan.risk_level,
+            "date": scan.created_at,
+            "summary": f"{scan.prediction} detected with {scan.confidence*100:.1f}% confidence.",
+            "recommendation": "Consult a specialist for further diagnosis."
+        }
+
+        return Response(report)
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)

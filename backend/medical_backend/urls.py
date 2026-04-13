@@ -18,7 +18,7 @@ from django.contrib import admin
 from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
-from diagnosis.views import predict_view, create_patient, patient_history
+from diagnosis.views import predict_view, create_patient, patient_history, search_patient, generate_report
 from rest_framework.authtoken.views import obtain_auth_token
 
 urlpatterns = [
@@ -26,6 +26,8 @@ urlpatterns = [
     path('api/create-patient/', create_patient),
     path('api/predict/', predict_view),
     path('api/history/<int:patient_id>/', patient_history),
+    path('api/search-patient/', search_patient),
+    path('api/report/<int:scan_id>/', generate_report),
     path('api/token/', obtain_auth_token),
 
 ]
