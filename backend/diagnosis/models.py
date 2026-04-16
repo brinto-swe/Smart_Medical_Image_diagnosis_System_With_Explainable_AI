@@ -35,3 +35,4 @@ class ScanResult(models.Model):
 
     def __str__(self):
         return f"{self.patient.name} - {self.prediction}"
+

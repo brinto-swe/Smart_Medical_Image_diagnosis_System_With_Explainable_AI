@@ -131,3 +131,4 @@ def scan_detail(request, scan_id):
 
     serializer = ScanResultSerializer(scan)
     return Response(serializer.data)
+

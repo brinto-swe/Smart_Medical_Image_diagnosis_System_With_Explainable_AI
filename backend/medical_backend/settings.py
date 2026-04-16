@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'diagnosis',
     'rest_framework.authtoken',
-
+    'accounts'
 ]
 
 MIDDLEWARE = [
@@ -141,6 +141,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
-    ],
+    ]
 }

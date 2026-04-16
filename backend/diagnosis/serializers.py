@@ -14,3 +14,4 @@ class ScanResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = ScanResult
         fields = '__all__'
+
