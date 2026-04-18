@@ -9,6 +9,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     role = serializers.CharField(read_only=True)
     dashboard = serializers.CharField(read_only=True)
     profile_picture_url = serializers.SerializerMethodField()
+    electronic_signature_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -22,6 +23,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "dashboard",
             "profile_picture",
             "profile_picture_url",
+            "electronic_signature",
+            "electronic_signature_url",
             "phone_number",
             "patient_id",
             "doctor_id",
@@ -39,12 +42,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
-            "username",
             "role",
             "dashboard",
             "patient_id",
             "doctor_id",
-            "specialization",
             "must_change_password",
             "date_joined",
         ]
@@ -54,6 +55,13 @@ class UserProfileSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get("request")
         url = obj.profile_picture.url
+        return request.build_absolute_uri(url) if request else url
+
+    def get_electronic_signature_url(self, obj):
+        if not obj.electronic_signature:
+            return None
+        request = self.context.get("request")
+        url = obj.electronic_signature.url
         return request.build_absolute_uri(url) if request else url
 
 
@@ -88,6 +96,7 @@ class AdminUserCreateSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "phone_number",
+            "electronic_signature",
             "patient_id",
             "doctor_id",
             "specialization",
@@ -137,6 +146,7 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
             "first_name",
             "last_name",
             "phone_number",
+            "electronic_signature",
             "patient_id",
             "doctor_id",
             "specialization",

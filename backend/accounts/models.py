@@ -12,9 +12,18 @@ def user_profile_picture_path(instance, filename):
     return f"profile_pictures/user_{instance.pk or 'new'}/{filename}"
 
 
+def user_signature_path(instance, filename):
+    return f"signatures/user_{instance.pk or 'new'}/{filename}"
+
+
 class User(AbstractUser):
     profile_picture = models.ImageField(
         upload_to=user_profile_picture_path,
+        blank=True,
+        null=True,
+    )
+    electronic_signature = models.ImageField(
+        upload_to=user_signature_path,
         blank=True,
         null=True,
     )

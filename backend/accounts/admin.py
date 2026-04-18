@@ -12,6 +12,7 @@ class CustomUserAdmin(UserAdmin):
             {
                 "fields": (
                     "profile_picture",
+                    "electronic_signature",
                     "phone_number",
                     "patient_id",
                     "doctor_id",

@@ -7,6 +7,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,14 @@ public class ApiClient {
     }
 
     public Map<String, Object> patchMultipart(String path, Map<String, Object> fields, String fileField, File file) throws Exception {
+        Map<String, File> files = new java.util.LinkedHashMap<>();
+        if (fileField != null && file != null) {
+            files.put(fileField, file);
+        }
+        return patchMultipart(path, fields, files);
+    }
+
+    public Map<String, Object> patchMultipart(String path, Map<String, Object> fields, Map<String, File> files) throws Exception {
         String boundary = "----MediCareBoundary" + System.currentTimeMillis();
         List<byte[]> chunks = new ArrayList<>();
         for (Map.Entry<String, Object> entry : fields.entrySet()) {
@@ -58,8 +67,10 @@ public class ApiClient {
                 addField(chunks, boundary, entry.getKey(), String.valueOf(entry.getValue()));
             }
         }
-        if (file != null) {
-            addFile(chunks, boundary, fileField, file);
+        for (Map.Entry<String, File> entry : files.entrySet()) {
+            if (entry.getValue() != null) {
+                addFile(chunks, boundary, entry.getKey(), entry.getValue());
+            }
         }
         chunks.add(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
 
@@ -73,6 +84,27 @@ public class ApiClient {
 
         Object parsed = send("PATCH", path, body, "multipart/form-data; boundary=" + boundary);
         return Json.asObject(parsed);
+    }
+
+    public void downloadToFile(String path, File target) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl + path));
+        if (token != null && !token.isBlank()) {
+            builder.header("Authorization", "Token " + token);
+        }
+        HttpResponse<byte[]> response = http.send(builder.GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+        if (response.statusCode() >= 400) {
+            Object parsed = response.body() == null || response.body().length == 0
+                ? Map.of()
+                : Json.parse(new String(response.body(), StandardCharsets.UTF_8));
+            throw new RuntimeException(errorMessage(parsed, response.statusCode()));
+        }
+        Files.write(target.toPath(), response.body());
+    }
+
+    public File downloadToTempFile(String path, String prefix, String suffix) throws Exception {
+        Path target = Files.createTempFile(prefix, suffix);
+        downloadToFile(path, target.toFile());
+        return target.toFile();
     }
 
     public Map<String, Object> uploadXray(String patientId, File image) throws Exception {

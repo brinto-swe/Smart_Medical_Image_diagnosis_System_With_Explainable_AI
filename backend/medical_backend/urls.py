@@ -20,6 +20,9 @@ from accounts.views import (
 from diagnosis.views import (
     AdminReportSummaryView,
     DoctorPatientSearchView,
+    GenerateMedicalReportView,
+    MedicalReportFileView,
+    MedicalReportListView,
     PatientHistoryView,
     PredictXrayView,
     RecentScanListView,
@@ -51,6 +54,9 @@ urlpatterns = [
     path("api/scans/<int:pk>/", ScanDetailView.as_view(), name="scan-detail"),
     path("api/patients/<str:patient_id>/history/", PatientHistoryView.as_view(), name="patient-history"),
     path("api/reports/<int:scan_id>/", ReportView.as_view(), name="scan-report"),
+    path("api/reports/", MedicalReportListView.as_view(), name="medical-report-list"),
+    path("api/scans/<int:scan_id>/report/generate/", GenerateMedicalReportView.as_view(), name="medical-report-generate"),
+    path("api/reports/<int:report_id>/<str:mode>/", MedicalReportFileView.as_view(), name="medical-report-file"),
 ]
 
 if settings.DEBUG:

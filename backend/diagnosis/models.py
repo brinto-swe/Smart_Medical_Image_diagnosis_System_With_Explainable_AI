@@ -33,3 +33,28 @@ class ScanResult(models.Model):
     def __str__(self):
         patient_name = self.patient.get_full_name() or self.patient.username
         return f"{patient_name} - {self.prediction}"
+
+
+class MedicalReport(models.Model):
+    scan = models.OneToOneField(
+        ScanResult,
+        on_delete=models.CASCADE,
+        related_name="medical_report",
+    )
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="medical_reports",
+    )
+    doctor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="issued_reports",
+    )
+    report_pdf = models.FileField(upload_to="reports/", blank=True, null=True)
+    generated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Report R{self.scan_id:03d}"

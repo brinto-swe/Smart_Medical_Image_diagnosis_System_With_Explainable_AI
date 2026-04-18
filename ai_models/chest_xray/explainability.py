@@ -1,5 +1,3 @@
-# ai_models/chest_xray/explainability.py
-
 import torch
 import cv2
 import numpy as np

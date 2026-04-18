@@ -35,7 +35,9 @@ $env:PATH = 'C:\Users\mozad\Downloads\openjfx-26_windows-x64_bin-sdk\javafx\bin;
 - Role-style login and patient signup
 - Admin dashboard, doctor management, patient management, reports summary
 - Doctor dashboard, patient search, X-ray upload, scan history
-- Patient dashboard, own reports, editable profile, profile picture upload, change password
+- Doctor profile editing, profile picture upload, electronic signature upload, and change password
+- Patient dashboard, own reports, report preview/download, editable profile, profile picture upload, change password
+- Admin report search with preview/download actions
 - SMTP password reset request trigger
 
 ## Backend API Used
@@ -52,3 +54,7 @@ $env:PATH = 'C:\Users\mozad\Downloads\openjfx-26_windows-x64_bin-sdk\javafx\bin;
 - `GET /api/doctor/patients/search/`
 - `POST /api/doctor/xray/upload/`
 - `GET /api/scans/`
+- `POST /api/scans/<scan_id>/report/generate/`
+- `GET /api/reports/`
+- `GET /api/reports/<report_id>/preview/`
+- `GET /api/reports/<report_id>/download/`

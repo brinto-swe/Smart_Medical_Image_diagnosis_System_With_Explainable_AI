@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -94,3 +95,63 @@ class DiagnosisFlowTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["patient_id"], "P001")
+
+    @patch("diagnosis.views.build_medical_report_pdf")
+    def test_doctor_generates_pdf_report_for_scan(self, mock_pdf):
+        mock_pdf.return_value = ContentFile(b"%PDF-1.4\nfake\n")
+        scan = ScanResult.objects.create(
+            patient=self.patient,
+            uploaded_by=self.doctor,
+            original_image=SimpleUploadedFile("one.jpg", b"one", content_type="image/jpeg"),
+            prediction="NORMAL",
+            confidence=0.9,
+            risk_level="LOW",
+        )
+
+        self.authenticate(self.doctor)
+        response = self.client.post(f"/api/scans/{scan.id}/report/generate/")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["patient_id"], "P001")
+        self.assertTrue(scan.medical_report.report_pdf.name.endswith(".pdf"))
+
+    @patch("diagnosis.views.build_medical_report_pdf")
+    def test_patient_can_preview_own_generated_report(self, mock_pdf):
+        mock_pdf.return_value = ContentFile(b"%PDF-1.4\nfake\n")
+        scan = ScanResult.objects.create(
+            patient=self.patient,
+            uploaded_by=self.doctor,
+            original_image=SimpleUploadedFile("one.jpg", b"one", content_type="image/jpeg"),
+            prediction="NORMAL",
+            confidence=0.9,
+            risk_level="LOW",
+        )
+        self.authenticate(self.doctor)
+        generated = self.client.post(f"/api/scans/{scan.id}/report/generate/")
+
+        self.authenticate(self.patient)
+        response = self.client.get(f"/api/reports/{generated.data['id']}/preview/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+
+    @patch("diagnosis.views.build_medical_report_pdf")
+    def test_generating_doctor_is_saved_on_report(self, mock_pdf):
+        second_doctor = User.objects.create_user(username="doctor2", password="Pass12345!", doctor_id="D002")
+        set_user_group(second_doctor, DOCTOR_GROUP)
+        mock_pdf.return_value = ContentFile(b"%PDF-1.4\nfake\n")
+        scan = ScanResult.objects.create(
+            patient=self.patient,
+            uploaded_by=self.doctor,
+            original_image=SimpleUploadedFile("one.jpg", b"one", content_type="image/jpeg"),
+            prediction="NORMAL",
+            confidence=0.9,
+            risk_level="LOW",
+        )
+
+        self.authenticate(second_doctor)
+        response = self.client.post(f"/api/scans/{scan.id}/report/generate/")
+
+        self.assertEqual(response.status_code, 201)
+        scan.refresh_from_db()
+        self.assertEqual(scan.medical_report.doctor, second_doctor)
