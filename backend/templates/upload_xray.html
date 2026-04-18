@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3>Upload X-ray</h3>
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input name="patient_id" placeholder="Patient ID"><br><br>
+    <input type="file" name="image"><br><br>
+    <button type="submit">Upload</button>
+</form>
+
+{% if result %}
+<p>Prediction: {{ result.prediction }}</p>
+<p>Confidence: {{ result.confidence }}</p>
+<p>Risk: {{ result.risk_level }}</p>
+
+<img src="{{ result.heatmap_image }}">
+{% endif %}
+
+{% endblock %}

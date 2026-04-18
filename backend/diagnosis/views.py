@@ -1,134 +1,182 @@
-from ai_models.chest_xray.inference import predict
 import os
+import tempfile
+
 import cv2
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
+from rest_framework import generics, status
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import ScanResult, Patient
-from .serializers import ScanResultSerializer, PatientSerializer
-from .permissions import IsDoctor, IsAdmin
+from accounts.models import ADMIN_GROUP, DOCTOR_GROUP, PATIENT_GROUP
+from accounts.serializers import UserProfileSerializer
+from accounts.utils import user_has_group
+from ai_models.chest_xray.inference import predict
+
+from .models import ScanResult
+from .permissions import IsAdminDoctorOrPatient, IsAdminOrDoctor, IsAdminUserGroup, IsDoctorUserGroup
+from .serializers import ScanResultSerializer
 
 
-# ✅ Create Patient
-@api_view(['POST'])
-@permission_classes([IsDoctor])
-def create_patient(request):
-    serializer = PatientSerializer(data=request.data)
-    if serializer.is_valid():
-        patient = serializer.save()
-        return Response({"message": "Patient created", "patient_id": patient.id})
-    return Response(serializer.errors, status=400)
+User = get_user_model()
 
 
-# ✅ Predict + Save Scan
-@api_view(['POST'])
-@permission_classes([IsDoctor])
-def predict_view(request):
-    try:
-        image = request.FILES.get('image')
-        patient_id = request.data.get('patient_id')
+def patient_queryset():
+    return User.objects.filter(groups__name=PATIENT_GROUP).order_by("patient_id", "id")
 
-        if not image or not patient_id:
-            return Response({"error": "image and patient_id required"}, status=400)
 
-        patient = Patient.objects.get(id=patient_id)
+def scan_queryset_for_user(user):
+    queryset = ScanResult.objects.select_related("patient", "uploaded_by").order_by("-created_at")
+    if user_has_group(user, ADMIN_GROUP) or user_has_group(user, DOCTOR_GROUP):
+        return queryset
+    return queryset.filter(patient=user)
 
-        # save temp
-        temp_path = os.path.join(settings.MEDIA_ROOT, image.name)
-        with open(temp_path, 'wb+') as f:
-            for chunk in image.chunks():
-                f.write(chunk)
 
-        # AI prediction
-        result = predict(temp_path)
+class DoctorPatientSearchView(generics.ListAPIView):
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsDoctorUserGroup]
 
-        # save heatmap
-        heatmap_filename = f"heatmap_{image.name}"
-        heatmap_path = os.path.join(settings.MEDIA_ROOT, heatmap_filename)
-        cv2.imwrite(heatmap_path, result["heatmap"])
+    def get_queryset(self):
+        query = self.request.query_params.get("q", "").strip()
+        queryset = patient_queryset()
+        if query:
+            queryset = queryset.filter(
+                Q(patient_id__icontains=query)
+                | Q(first_name__icontains=query)
+                | Q(last_name__icontains=query)
+                | Q(username__icontains=query)
+                | Q(email__icontains=query)
+                | Q(phone_number__icontains=query)
+            )
+        return queryset
 
-        with open(heatmap_path, "rb") as f:
+
+class PredictXrayView(APIView):
+    permission_classes = [IsDoctorUserGroup]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        image = request.FILES.get("image")
+        patient_identifier = request.data.get("patient_id")
+
+        if not image or not patient_identifier:
+            return Response({"error": "image and patient_id are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        patient = get_object_or_404(User, patient_id=patient_identifier, groups__name=PATIENT_GROUP)
+
+        suffix = os.path.splitext(image.name)[1] or ".jpg"
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+                temp_path = temp_file.name
+                for chunk in image.chunks():
+                    temp_file.write(chunk)
+
+            result = predict(temp_path)
+            heatmap_success, heatmap_buffer = cv2.imencode(".jpg", result["heatmap"])
+            if not heatmap_success:
+                return Response({"error": "Could not generate heatmap image."}, status=500)
+
+            image.seek(0)
             scan = ScanResult.objects.create(
                 patient=patient,
                 uploaded_by=request.user,
                 original_image=image,
-                heatmap_image=ContentFile(f.read(), name=heatmap_filename),
                 prediction=result["prediction"],
                 confidence=result["confidence"],
                 risk_level=result["risk_level"],
+                result_json={
+                    "prediction": result["prediction"],
+                    "confidence": result["confidence"],
+                    "risk_level": result["risk_level"],
+                },
                 explanation={
                     "note": "Grad-CAM visualization generated",
-                    "model": "MSA-HCNN"
-                }
+                    "model": "MSA-HCNN",
+                },
             )
+            scan.heatmap_image.save(
+                f"heatmap_scan_{scan.pk}.jpg",
+                ContentFile(heatmap_buffer.tobytes()),
+                save=True,
+            )
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
-        serializer = ScanResultSerializer(scan)
-        return Response(serializer.data)
-
-    except Exception as e:
-        return Response({"error": str(e)}, status=500)
-
-
-# ✅ Get All Scans
-@api_view(['GET'])
-def all_scans(request):
-    scans = ScanResult.objects.all().order_by('-created_at')
-    serializer = ScanResultSerializer(scans, many=True)
-    return Response(serializer.data)
+        serializer = ScanResultSerializer(scan, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
-# ✅ Recent Scans (Dashboard)
-@api_view(['GET'])
-def recent_scans(request):
-    scans = ScanResult.objects.all().order_by('-created_at')[:5]
-    serializer = ScanResultSerializer(scans, many=True)
-    return Response(serializer.data)
+class ScanListView(generics.ListAPIView):
+    serializer_class = ScanResultSerializer
+    permission_classes = [IsAdminDoctorOrPatient]
+
+    def get_queryset(self):
+        return scan_queryset_for_user(self.request.user)
 
 
-# ✅ Patient History
-@api_view(['GET'])
-def patient_history(request, patient_id):
-    scans = ScanResult.objects.filter(patient_id=patient_id).order_by('-created_at')
-    serializer = ScanResultSerializer(scans, many=True)
-    return Response(serializer.data)
+class RecentScanListView(generics.ListAPIView):
+    serializer_class = ScanResultSerializer
+    permission_classes = [IsAdminOrDoctor]
+
+    def get_queryset(self):
+        return scan_queryset_for_user(self.request.user)[:5]
 
 
-# ✅ Search Patient
-@api_view(['GET'])
-def search_patient(request):
-    query = request.GET.get('q', '')
-    patients = Patient.objects.filter(name__icontains=query)
-    serializer = PatientSerializer(patients, many=True)
-    return Response(serializer.data)
+class PatientHistoryView(generics.ListAPIView):
+    serializer_class = ScanResultSerializer
+    permission_classes = [IsAdminDoctorOrPatient]
+
+    def get_queryset(self):
+        patient_identifier = self.kwargs["patient_id"]
+        if user_has_group(self.request.user, PATIENT_GROUP):
+            return ScanResult.objects.filter(patient=self.request.user).order_by("-created_at")
+        patient = get_object_or_404(User, patient_id=patient_identifier, groups__name=PATIENT_GROUP)
+        return ScanResult.objects.filter(patient=patient).select_related("patient", "uploaded_by").order_by("-created_at")
 
 
-# ✅ Report (Admin Only)
-@api_view(['GET'])
-@permission_classes([IsAdmin])
-def generate_report(request, scan_id):
-    scan = ScanResult.objects.get(id=scan_id)
+class ScanDetailView(generics.RetrieveAPIView):
+    serializer_class = ScanResultSerializer
+    permission_classes = [IsAdminDoctorOrPatient]
 
-    report = {
-        "patient_id": scan.patient.id,
-        "prediction": scan.prediction,
-        "confidence": scan.confidence,
-        "risk_level": scan.risk_level,
-        "date": scan.created_at,
-        "summary": f"{scan.prediction} detected with {scan.confidence*100:.1f}% confidence.",
-        "recommendation": "Consult a specialist."
-    }
-
-    return Response(report)
+    def get_queryset(self):
+        return scan_queryset_for_user(self.request.user)
 
 
-# ✅ Scan Detail
-@api_view(['GET'])
-def scan_detail(request, scan_id):
-    scan = ScanResult.objects.get(id=scan_id)
+class ReportView(APIView):
+    permission_classes = [IsAdminDoctorOrPatient]
 
-    serializer = ScanResultSerializer(scan)
-    return Response(serializer.data)
+    def get(self, request, scan_id):
+        scan = get_object_or_404(scan_queryset_for_user(request.user), pk=scan_id)
+        serializer = ScanResultSerializer(scan, context={"request": request})
+        return Response(
+            {
+                "report_id": f"R{scan.id:03d}",
+                "scan": serializer.data,
+                "summary": f"{scan.prediction} detected with {scan.confidence * 100:.1f}% confidence.",
+                "recommendation": "Consult a specialist for clinical interpretation.",
+            }
+        )
 
+
+class AdminReportSummaryView(APIView):
+    permission_classes = [IsAdminUserGroup]
+
+    def get(self, request):
+        scans = ScanResult.objects.all()
+        total_patients = User.objects.filter(groups__name=PATIENT_GROUP).count()
+        total_doctors = User.objects.filter(groups__name=DOCTOR_GROUP).count()
+        return Response(
+            {
+                "total_patients": total_patients,
+                "active_doctors": total_doctors,
+                "xray_scans": scans.count(),
+                "normal_results": scans.filter(prediction__iexact="NORMAL").count(),
+                "needs_attention": scans.exclude(prediction__iexact="NORMAL").count(),
+                "by_prediction": list(scans.values("prediction").annotate(total=Count("id")).order_by("prediction")),
+            }
+        )

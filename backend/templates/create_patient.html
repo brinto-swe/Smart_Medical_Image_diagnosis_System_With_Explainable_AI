@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3>Create Patient</h3>
+
+<form method="post">
+    {% csrf_token %}
+    <input name="name" placeholder="Name"><br><br>
+    <input name="age" placeholder="Age"><br><br>
+    <input name="gender" placeholder="Gender"><br><br>
+
+    <button type="submit">Create</button>
+</form>
+
+{% if msg %}
+<p>{{ msg }}</p>
+{% endif %}
+
+{% endblock %}
