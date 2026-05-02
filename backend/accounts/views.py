@@ -24,7 +24,7 @@ from .serializers import (
     SignupSerializer,
     UserProfileSerializer,
 )
-from .utils import generate_identifier, set_user_group
+from .utils import ensure_group_identifiers, generate_identifier, set_user_group
 from diagnosis.permissions import IsAdminUserGroup
 
 
@@ -32,6 +32,7 @@ User = get_user_model()
 
 
 def users_in_group(group_name):
+    ensure_group_identifiers(group_name)
     return User.objects.filter(groups__name=group_name).order_by("id")
 
 

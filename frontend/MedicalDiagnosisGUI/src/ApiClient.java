@@ -51,6 +51,10 @@ public class ApiClient {
         return Json.asObject(parsed);
     }
 
+    public void delete(String path) throws Exception {
+        send("DELETE", path, (byte[]) null, "application/json");
+    }
+
     public Map<String, Object> patchMultipart(String path, Map<String, Object> fields, String fileField, File file) throws Exception {
         Map<String, File> files = new java.util.LinkedHashMap<>();
         if (fileField != null && file != null) {

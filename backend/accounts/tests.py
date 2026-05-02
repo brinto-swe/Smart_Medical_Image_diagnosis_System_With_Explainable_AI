@@ -93,3 +93,15 @@ class AuthAndRBACTests(APITestCase):
         user = User.objects.get(username="adminpatient")
         self.assertTrue(user.groups.filter(name=PATIENT_GROUP).exists())
         self.assertTrue(user.must_change_password)
+
+    def test_listing_doctors_backfills_missing_doctor_id(self):
+        self.doctor.doctor_id = None
+        self.doctor.save(update_fields=["doctor_id"])
+
+        self.authenticate(self.admin)
+        response = self.client.get("/api/admin/doctors/")
+
+        self.assertEqual(response.status_code, 200)
+        self.doctor.refresh_from_db()
+        self.assertTrue(self.doctor.doctor_id)
+        self.assertEqual(response.data[0]["doctor_id"], self.doctor.doctor_id)

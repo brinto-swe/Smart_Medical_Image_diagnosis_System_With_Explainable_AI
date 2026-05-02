@@ -58,3 +58,35 @@ class MedicalReport(models.Model):
 
     def __str__(self):
         return f"Report R{self.scan_id:03d}"
+
+
+class DoctorAssignment(models.Model):
+    patient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="doctor_assignments",
+    )
+    doctor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="assigned_patients",
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_assignments",
+    )
+    scheduled_at = models.DateTimeField()
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["scheduled_at", "-created_at"]
+
+    def __str__(self):
+        patient_name = self.patient.get_full_name() or self.patient.username
+        doctor_name = self.doctor.get_full_name() or self.doctor.username
+        return f"{patient_name} -> {doctor_name} @ {self.scheduled_at:%Y-%m-%d %H:%M}"

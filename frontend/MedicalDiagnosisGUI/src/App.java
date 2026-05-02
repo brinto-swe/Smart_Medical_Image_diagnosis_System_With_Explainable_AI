@@ -1,8 +1,13 @@
 import java.io.File;
 import java.awt.Desktop;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -10,14 +15,23 @@ import java.util.Map;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
+import javafx.collections.ObservableList;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.chart.BarChart;
+import javafx.scene.chart.CategoryAxis;
+import javafx.scene.chart.LineChart;
+import javafx.scene.chart.NumberAxis;
+import javafx.scene.chart.PieChart;
+import javafx.scene.chart.XYChart;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.ProgressBar;
@@ -48,6 +62,7 @@ public class App extends Application {
     private Stage stage;
     private BorderPane shell;
     private Map<String, Object> currentUser;
+    private String selectedDiagnosisPatientId;
 
     public static void main(String[] args) {
         launch(args);
@@ -71,24 +86,22 @@ public class App extends Application {
     }
 
     private Parent showLogin() {
-        VBox root = new VBox(24);
+        VBox root = new VBox(28);
         root.getStyleClass().add("login-root");
         root.setAlignment(Pos.CENTER);
 
-        ImageView logo = logoView(162);
+        ImageView logo = logoView(210);
         Label title = new Label("Medical Diagnosis Center");
         title.getStyleClass().add("login-title");
-        Label subtitle = new Label("Select your role to access the dashboard");
+        Label subtitle = new Label("Sign in to access your dashboard");
         subtitle.getStyleClass().add("muted");
-
-        HBox roleCards = new HBox(20,
-                roleCard("Administrator", "Manage doctors, patients, and system reports"),
-                roleCard("Doctor", "Search patients, analyze X-rays, and view history"),
-                roleCard("Patient", "View medical reports and manage your information"));
-        roleCards.setAlignment(Pos.CENTER);
+        VBox hero = new VBox(12, logo, title, subtitle);
+        hero.setAlignment(Pos.CENTER);
 
         VBox form = card();
-        form.setMaxWidth(420);
+        form.getStyleClass().add("login-card");
+        form.setMaxWidth(500);
+        form.setAlignment(Pos.CENTER);
         TextField username = input("Username");
         PasswordField password = passwordInput("Password");
         Button login = primaryButton("Login");
@@ -108,8 +121,10 @@ public class App extends Application {
         signup.setOnAction(e -> stage.getScene().setRoot(showSignup()));
         forgot.setOnAction(e -> showPasswordResetRequest());
 
-        form.getChildren().addAll(sectionTitle("Login"), username, password, login, signup, forgot, message);
-        root.getChildren().addAll(logo, title, subtitle, roleCards, form);
+        Label formTitle = sectionTitle("Login");
+        formTitle.getStyleClass().add("login-form-title");
+        form.getChildren().addAll(formTitle, username, password, login, signup, forgot, message);
+        root.getChildren().addAll(hero, form);
         return root;
     }
 
@@ -187,13 +202,12 @@ public class App extends Application {
         nav.getStyleClass().add("sidebar");
         nav.setPrefWidth(188);
 
-        ImageView logo = logoView(86);
+        ImageView logo = logoView(108);
         Label brand = new Label("MediCare");
         brand.getStyleClass().add("brand");
         Label portal = new Label(capitalize(role) + " Portal");
         portal.getStyleClass().add("portal");
-        VBox brandText = new VBox(2, brand, portal);
-        HBox header = new HBox(10, logo, brandText);
+        VBox header = new VBox(8, logo, brand, portal);
         header.setAlignment(Pos.CENTER_LEFT);
         header.setPadding(new Insets(16, 14, 16, 14));
 
@@ -203,9 +217,11 @@ public class App extends Application {
                     navButton("Dashboard", "dashboard.png", this::showAdminDashboard),
                     navButton("Manage Doctors", "user.png", this::showManageDoctors),
                     navButton("Manage Patients", "user.png", this::showManagePatients),
+                    navButton("Assign Doctor", "history.png", this::showAssignDoctor),
                     navButton("Reports", "reports.png", this::showAdminReports));
             case "doctor" -> nav.getChildren().addAll(
                     navButton("Dashboard", "dashboard.png", this::showDoctorDashboard),
+                    navButton("Assigned Patients", "user.png", this::showAssignedPatients),
                     navButton("X-ray Analysis", "scan.png", this::showDoctorUpload),
                     navButton("Patient History", "history.png", this::showDoctorHistory),
                     navButton("My Profile", "user.png", this::showProfile));
@@ -242,7 +258,7 @@ public class App extends Application {
         button.getStyleClass().add("nav-button");
         button.setMaxWidth(Double.MAX_VALUE);
         if (iconFile != null) {
-            button.setGraphic(iconGraphic(iconFile, 18));
+            button.setGraphic(iconGraphic(iconFile, 20));
         }
         button.setOnAction(e -> action.run());
         return button;
@@ -268,26 +284,56 @@ public class App extends Application {
 
     private void showAdminDashboard() {
         VBox content = new VBox(18);
-        HBox stats = new HBox(16, statCard("Total Doctors", "-", "blue"), statCard("Total Patients", "-", "teal"));
-        GridPane quick = new GridPane();
-        quick.setHgap(18);
-        quick.setVgap(18);
-        quick.add(createDoctorForm(), 0, 0);
-        quick.add(createPatientForm(), 1, 0);
-        content.getChildren().addAll(stats, quick, sectionTitle("Recently Added Doctors"), doctorTable(List.of()));
+        ComboBox<String> period = new ComboBox<>(FXCollections.observableArrayList("Monthly", "Weekly", "Daily"));
+        period.getStyleClass().add("input");
+        period.setValue("Monthly");
+        HBox controls = new HBox(12, sectionTitle("Medical Analytics"), period);
+        controls.setAlignment(Pos.CENTER_LEFT);
+
+        HBox stats = new HBox(16,
+                statCard("Total Doctors", "-", "blue"),
+                statCard("Total Patients", "-", "teal"),
+                statCard("Assignments", "-", "purple"),
+                statCard("X-Ray Scans", "-", "green"));
+
+        GridPane charts = new GridPane();
+        charts.setHgap(18);
+        charts.setVgap(18);
+        charts.add(chartPlaceholder("Patient Growth"), 0, 0);
+        charts.add(chartPlaceholder("Doctor Assignment Split"), 1, 0);
+        charts.add(chartPlaceholder("Scan Volume"), 0, 1);
+        charts.add(chartPlaceholder("Disease Distribution"), 1, 1);
+
+        content.getChildren().addAll(controls, stats, charts, sectionTitle("Recently Added Doctors"), doctorTable(List.of()));
         setContent("Admin Dashboard", "Manage your healthcare system", content);
 
-        runAsync(null, () -> {
-            Map<String, Object> summary = api.getObject("/api/admin/reports/summary/");
+        Runnable load = () -> runAsync(null, () -> {
+            String selected = Json.asString(period.getValue()).toLowerCase();
+            Map<String, Object> summary = api.getObject("/api/admin/reports/summary/?period=" + ApiClient.urlEncode(selected));
             List<Map<String, Object>> doctors = api.getList("/api/admin/doctors/");
             Platform.runLater(() -> {
                 stats.getChildren().set(0,
                         statCard("Total Doctors", Json.asString(summary.get("active_doctors")), "blue"));
                 stats.getChildren().set(1,
                         statCard("Total Patients", Json.asString(summary.get("total_patients")), "teal"));
-                content.getChildren().set(3, doctorTable(doctors));
+                stats.getChildren().set(2,
+                        statCard("Assignments", Json.asString(summary.get("total_assignments")), "purple"));
+                stats.getChildren().set(3,
+                        statCard("X-Ray Scans", Json.asString(summary.get("xray_scans")), "green"));
+                setChartGrid(charts,
+                        chartCard("Patient Growth",
+                                lineChart("Patients Joined", Json.asObject(summary.get("patient_growth")), "blue")),
+                        chartCard("Doctor Assignment Split",
+                                doctorAssignmentChart(Json.asListOfObjects(summary.get("doctor_assignment_distribution")))),
+                        chartCard("Scan Volume",
+                                barChart("Scans", Json.asObject(summary.get("scan_volume")), "teal")),
+                        chartCard("Disease Distribution",
+                                horizontalBarChart(Json.asListOfObjects(summary.get("disease_distribution")))));
+                content.getChildren().set(4, doctorTable(doctors));
             });
         });
+        period.setOnAction(e -> load.run());
+        load.run();
     }
 
     private void showManageDoctors() {
@@ -306,6 +352,36 @@ public class App extends Application {
             List<Map<String, Object>> patients = api.getList("/api/admin/patients/");
             Platform.runLater(() -> content.getChildren().set(1, patientTable(patients)));
         });
+    }
+
+    private void showAssignDoctor() {
+        VBox content = new VBox(18);
+        VBox searchCard = card();
+        TextField patientSearch = input("Enter Patient ID, e.g. P001");
+        Button search = primaryButton("Search Patient");
+        HBox searchRow = new HBox(10, patientSearch, search);
+        HBox.setHgrow(patientSearch, Priority.ALWAYS);
+        VBox resultBox = new VBox(12);
+        searchCard.getChildren().addAll(
+                sectionTitle("Assign Doctor"),
+                muted("Search the patient, choose a doctor, select date and time, then assign the case."),
+                searchRow,
+                resultBox);
+        content.getChildren().add(searchCard);
+        setContent("Assign Doctor", "Schedule patients with the right doctor", content);
+
+        Runnable searchAction = () -> runAsync(null, () -> {
+            List<Map<String, Object>> patients = api.getList("/api/admin/patients/?q=" + ApiClient.urlEncode(patientSearch.getText()));
+            List<Map<String, Object>> doctors = api.getList("/api/admin/doctors/");
+            Platform.runLater(() -> {
+                if (patients.isEmpty()) {
+                    resultBox.getChildren().setAll(muted("No patient found for that ID."));
+                    return;
+                }
+                resultBox.getChildren().setAll(assignDoctorCard(patients.get(0), doctors));
+            });
+        });
+        search.setOnAction(e -> searchAction.run());
     }
 
     private void showAdminReports() {
@@ -415,7 +491,7 @@ public class App extends Application {
         search.getChildren().addAll(sectionTitle("Search Patient"),
                 muted("Enter patient ID to view medical records and history"), row, result);
         content.getChildren().addAll(search,
-                quickActions("X-ray Analysis", this::showDoctorUpload, "View History", this::showDoctorHistory));
+                quickActions("Assigned Patients", this::showAssignedPatients, "X-ray Analysis", this::showDoctorUpload));
         setContent("Doctor Dashboard", "Welcome back, " + Json.asString(currentUser.get("first_name")), content);
     }
 
@@ -432,6 +508,9 @@ public class App extends Application {
         content.setAlignment(Pos.CENTER);
         content.setMinHeight(420);
         TextField patientId = input("Patient ID, e.g. P001");
+        if (selectedDiagnosisPatientId != null && !selectedDiagnosisPatientId.isBlank()) {
+            patientId.setText(selectedDiagnosisPatientId);
+        }
         Label fileLabel = muted("No X-ray image selected");
         final File[] selected = new File[1];
         Button choose = ghostButton("Choose X-ray Image");
@@ -453,13 +532,38 @@ public class App extends Application {
             }
             runAsync(null, () -> {
                 Map<String, Object> scan = api.uploadXray(patientId.getText(), selected[0]);
-                Platform.runLater(() -> result.getChildren().setAll(scanDetailCard(scan)));
+                Platform.runLater(() -> {
+                    selectedDiagnosisPatientId = null;
+                    result.getChildren().setAll(scanDetailCard(scan));
+                });
             });
         });
         content.getChildren().addAll(sectionTitle("X-ray Analysis"),
                 muted("AI-powered medical image analysis for accurate diagnostics"), patientId, choose, fileLabel,
                 upload, result);
         setContent("X-ray Analysis", "Upload medical images and save results for a patient", content);
+    }
+
+    private void showAssignedPatients() {
+        VBox content = new VBox(18);
+        DatePicker datePicker = new DatePicker(LocalDate.now());
+        datePicker.getStyleClass().add("input");
+        TextField search = input("Search by Patient ID or name");
+        Button refresh = primaryButton("Load");
+        HBox filters = new HBox(10, search, datePicker, refresh);
+        HBox.setHgrow(search, Priority.ALWAYS);
+        content.getChildren().addAll(filters, tableLoading());
+        setContent("Assigned Patients", "View your scheduled patients and start diagnosis directly", content);
+
+        Runnable load = () -> runAsync(null, () -> {
+            String path = "/api/doctor/assignments/?date=" + ApiClient.urlEncode(datePicker.getValue().toString())
+                    + "&q=" + ApiClient.urlEncode(search.getText());
+            List<Map<String, Object>> assignments = api.getList(path);
+            Platform.runLater(() -> content.getChildren().set(1, assignmentTable(assignments)));
+        });
+        refresh.setOnAction(e -> load.run());
+        datePicker.setOnAction(e -> load.run());
+        load.run();
     }
 
     private void showDoctorHistory() {
@@ -669,24 +773,203 @@ public class App extends Application {
         return box;
     }
 
+    private VBox assignDoctorCard(Map<String, Object> patient, List<Map<String, Object>> doctors) {
+        VBox box = card();
+        Label patientInfo = sectionTitle(fullName(patient) + " (" + Json.asString(patient.get("patient_id")) + ")");
+        Label patientMeta = muted("Phone: " + Json.asString(patient.get("phone_number")) + "   Condition: "
+                + Json.asString(patient.get("primary_condition")));
+
+        ComboBox<String> doctorSelect = new ComboBox<>();
+        doctorSelect.getStyleClass().add("input");
+        Map<String, String> doctorLookup = new LinkedHashMap<>();
+        for (Map<String, Object> doctor : doctors) {
+            String doctorId = Json.asString(doctor.get("doctor_id"));
+            String label = doctorId.isBlank() ? fullName(doctor) : fullName(doctor) + " - " + doctorId;
+            doctorLookup.put(label, Json.asString(doctor.get("doctor_id")));
+        }
+        doctorSelect.setItems(FXCollections.observableArrayList(doctorLookup.keySet()));
+        doctorSelect.setPromptText("Select Doctor");
+        if (!doctorSelect.getItems().isEmpty()) {
+            doctorSelect.setValue(doctorSelect.getItems().get(0));
+        }
+
+        DatePicker datePicker = new DatePicker(LocalDate.now());
+        datePicker.getStyleClass().add("input");
+        ComboBox<String> timeSelect = new ComboBox<>(FXCollections.observableArrayList(timeOptions()));
+        timeSelect.getStyleClass().add("input");
+        timeSelect.setPromptText("Select Time");
+        timeSelect.setValue("09:00 AM");
+        TextField notes = input("Notes (optional)");
+        Button assign = primaryButton("Assign Doctor");
+        assign.setOnAction(e -> runAsync(null, () -> {
+            String doctorId = doctorLookup.get(doctorSelect.getValue());
+            LocalTime time = LocalTime.parse(timeSelect.getValue(), DateTimeFormatter.ofPattern("hh:mm a"));
+            LocalDateTime scheduled = LocalDateTime.of(datePicker.getValue(), time);
+            api.postJson("/api/admin/assignments/", Map.of(
+                    "patient_id", Json.asString(patient.get("patient_id")),
+                    "doctor_id", doctorId,
+                    "scheduled_at", scheduled.toString(),
+                    "notes", notes.getText()));
+            Platform.runLater(() -> {
+                alert("Doctor assigned successfully.");
+                showAssignDoctor();
+            });
+        }));
+
+        box.getChildren().addAll(
+                patientInfo,
+                patientMeta,
+                twoCol(doctorSelect, datePicker),
+                twoCol(timeSelect, notes),
+                assign);
+        return box;
+    }
+
+    private List<String> timeOptions() {
+        List<String> options = new ArrayList<>();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("hh:mm a");
+        for (int hour = 8; hour <= 18; hour++) {
+            options.add(LocalTime.of(hour, 0).format(formatter));
+            if (hour < 18) {
+                options.add(LocalTime.of(hour, 30).format(formatter));
+            }
+        }
+        return options;
+    }
+
+    private VBox chartPlaceholder(String title) {
+        VBox box = card();
+        box.getStyleClass().add("chart-card");
+        box.setMinHeight(320);
+        box.getChildren().addAll(sectionTitle(title), muted("Loading analytics..."));
+        return box;
+    }
+
+    private VBox chartCard(String title, Parent chart) {
+        VBox box = card();
+        box.getStyleClass().add("chart-card");
+        box.setMinHeight(320);
+        box.getChildren().addAll(sectionTitle(title), chart);
+        VBox.setVgrow(chart, Priority.ALWAYS);
+        return box;
+    }
+
+    private void setChartGrid(GridPane grid, Parent topLeft, Parent topRight, Parent bottomLeft, Parent bottomRight) {
+        grid.getChildren().clear();
+        grid.add(topLeft, 0, 0);
+        grid.add(topRight, 1, 0);
+        grid.add(bottomLeft, 0, 1);
+        grid.add(bottomRight, 1, 1);
+        GridPane.setHgrow(topLeft, Priority.ALWAYS);
+        GridPane.setHgrow(topRight, Priority.ALWAYS);
+        GridPane.setHgrow(bottomLeft, Priority.ALWAYS);
+        GridPane.setHgrow(bottomRight, Priority.ALWAYS);
+    }
+
+    private Parent lineChart(String seriesName, Map<String, Object> chartData, String colorClass) {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        LineChart<String, Number> chart = new LineChart<>(xAxis, yAxis);
+        chart.setLegendVisible(false);
+        chart.setAnimated(false);
+        chart.setCreateSymbols(true);
+        chart.setMinHeight(260);
+        chart.getStyleClass().addAll("analytics-chart", colorClass);
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        series.setName(seriesName);
+        for (int i = 0; i < Json.asList(chartData.get("labels")).size(); i++) {
+            String label = Json.asString(Json.asList(chartData.get("labels")).get(i));
+            Number value = Json.asDouble(Json.asList(chartData.get("values")).get(i));
+            series.getData().add(new XYChart.Data<>(label, value));
+        }
+        chart.getData().add(series);
+        return chart;
+    }
+
+    private Parent barChart(String seriesName, Map<String, Object> chartData, String colorClass) {
+        CategoryAxis xAxis = new CategoryAxis();
+        NumberAxis yAxis = new NumberAxis();
+        BarChart<String, Number> chart = new BarChart<>(xAxis, yAxis);
+        chart.setLegendVisible(false);
+        chart.setAnimated(false);
+        chart.setMinHeight(260);
+        chart.getStyleClass().addAll("analytics-chart", colorClass);
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        series.setName(seriesName);
+        for (int i = 0; i < Json.asList(chartData.get("labels")).size(); i++) {
+            String label = Json.asString(Json.asList(chartData.get("labels")).get(i));
+            Number value = Json.asDouble(Json.asList(chartData.get("values")).get(i));
+            series.getData().add(new XYChart.Data<>(label, value));
+        }
+        chart.getData().add(series);
+        return chart;
+    }
+
+    private Parent horizontalBarChart(List<Map<String, Object>> rows) {
+        NumberAxis xAxis = new NumberAxis();
+        CategoryAxis yAxis = new CategoryAxis();
+        BarChart<Number, String> chart = new BarChart<>(xAxis, yAxis);
+        chart.setLegendVisible(false);
+        chart.setAnimated(false);
+        chart.setMinHeight(260);
+        chart.getStyleClass().addAll("analytics-chart", "green");
+        XYChart.Series<Number, String> series = new XYChart.Series<>();
+        for (Map<String, Object> row : rows) {
+            series.getData().add(new XYChart.Data<>(Json.asDouble(row.get("value")), Json.asString(row.get("label"))));
+        }
+        chart.getData().add(series);
+        return chart;
+    }
+
+    private Parent doctorAssignmentChart(List<Map<String, Object>> rows) {
+        ObservableList<PieChart.Data> pieData = FXCollections.observableArrayList();
+        for (Map<String, Object> row : rows) {
+            pieData.add(new PieChart.Data(
+                    Json.asString(row.get("doctor_name")) + " (" + Json.asString(row.get("total")) + ")",
+                    Json.asDouble(row.get("total"))));
+        }
+        PieChart chart = new PieChart(pieData);
+        chart.setLegendVisible(true);
+        chart.setLabelsVisible(true);
+        chart.setMinHeight(260);
+        chart.getStyleClass().add("analytics-chart");
+        return chart;
+    }
+
     private TableView<Map<String, Object>> doctorTable(List<Map<String, Object>> data) {
         TableView<Map<String, Object>> table = table(data);
-        table.getColumns().add(col("Doctor ID", "doctor_id"));
-        table.getColumns().add(col("Name", item -> fullName(item)));
-        table.getColumns().add(col("Specialist", "specialization"));
-        table.getColumns().add(col("Email", "email"));
-        table.getColumns().add(col("Phone", "phone_number"));
+        table.getColumns().add(width(col("Doctor ID", "doctor_id"), 100));
+        table.getColumns().add(width(col("Name", item -> fullName(item)), 180));
+        table.getColumns().add(width(col("Specialist", "specialization"), 140));
+        table.getColumns().add(width(col("Email", "email"), 200));
+        table.getColumns().add(width(col("Phone", "phone_number"), 135));
+        table.getColumns().add(width(adminUserActionsCol("doctor"), 250));
         return table;
     }
 
     private TableView<Map<String, Object>> patientTable(List<Map<String, Object>> data) {
         TableView<Map<String, Object>> table = table(data);
-        table.getColumns().add(col("Patient ID", "patient_id"));
-        table.getColumns().add(col("Name", item -> fullName(item)));
-        table.getColumns().add(col("Age", "age"));
-        table.getColumns().add(col("Gender", "gender"));
-        table.getColumns().add(col("Phone", "phone_number"));
-        table.getColumns().add(col("Condition", "primary_condition"));
+        table.getColumns().add(width(col("Patient ID", "patient_id"), 100));
+        table.getColumns().add(width(col("Name", item -> fullName(item)), 180));
+        table.getColumns().add(width(col("Age", "age"), 70));
+        table.getColumns().add(width(col("Gender", "gender"), 90));
+        table.getColumns().add(width(col("Phone", "phone_number"), 135));
+        table.getColumns().add(width(col("Condition", "primary_condition"), 150));
+        table.getColumns().add(width(adminUserActionsCol("patient"), 250));
+        return table;
+    }
+
+    private TableView<Map<String, Object>> assignmentTable(List<Map<String, Object>> data) {
+        TableView<Map<String, Object>> table = table(data);
+        table.getColumns().add(width(col("Patient", "patient_name"), 190));
+        table.getColumns().add(width(col("Patient ID", "patient_id"), 110));
+        table.getColumns().add(width(col("Doctor", "doctor_name"), 190));
+        table.getColumns().add(width(col("Doctor ID", "doctor_id"), 105));
+        table.getColumns().add(width(col("Date & Time", item -> formatApiDate(Json.asString(item.get("scheduled_at")))), 195));
+        table.getColumns().add(width(col("Notes", "notes"), 190));
+        if (isDoctor()) {
+            table.getColumns().add(width(assignmentActionsCol(), 170));
+        }
         return table;
     }
 
@@ -696,7 +979,7 @@ public class App extends Application {
         table.getColumns().add(width(col("Patient", "patient_name"), 185));
         table.getColumns().add(width(col("Patient ID", "patient_id"), 110));
         table.getColumns()
-                .add(width(col("Date", item -> Json.asString(item.get("created_at")).replace("T", " ").split("\\.")[0]), 165));
+                .add(width(col("Date", item -> formatApiDate(Json.asString(item.get("created_at")))), 165));
         table.getColumns().add(width(col("Type", "scan_type"), 130));
         table.getColumns().add(width(resultCol(), 145));
         table.getColumns().add(width(confidenceCol(), 185));
@@ -802,6 +1085,64 @@ public class App extends Application {
                 preview.setOnAction(e -> previewReportForScan(scan));
                 download.setOnAction(e -> downloadReportForScan(scan));
                 HBox box = new HBox(8, preview, download);
+                if (isAdmin()) {
+                    Button edit = compactButton("Edit", "edit.png");
+                    Button delete = compactButton("Delete", "delete.png");
+                    edit.setOnAction(e -> editReportForScan(scan));
+                    delete.setOnAction(e -> deleteReportForScan(scan));
+                    box.getChildren().addAll(edit, delete);
+                }
+                box.setAlignment(Pos.CENTER_LEFT);
+                setGraphic(box);
+            }
+        });
+        return column;
+    }
+
+    private TableColumn<Map<String, Object>, String> adminUserActionsCol(String type) {
+        TableColumn<Map<String, Object>, String> column = new TableColumn<>("Actions");
+        column.setCellValueFactory(data -> new SimpleStringProperty(""));
+        column.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String value, boolean empty) {
+                super.updateItem(value, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    return;
+                }
+                Map<String, Object> item = getTableRow().getItem();
+                Button view = compactButton("View", "eye.png");
+                Button edit = compactButton("Edit", "edit.png");
+                Button delete = compactButton("Delete", "delete.png");
+                view.setOnAction(e -> showAdminUserViewDialog(type, item));
+                edit.setOnAction(e -> showAdminUserEditDialog(type, item));
+                delete.setOnAction(e -> deleteAdminUser(type, item));
+                HBox box = new HBox(8, view, edit, delete);
+                box.setAlignment(Pos.CENTER_LEFT);
+                setGraphic(box);
+            }
+        });
+        return column;
+    }
+
+    private TableColumn<Map<String, Object>, String> assignmentActionsCol() {
+        TableColumn<Map<String, Object>, String> column = new TableColumn<>("Actions");
+        column.setCellValueFactory(data -> new SimpleStringProperty(""));
+        column.setCellFactory(col -> new TableCell<>() {
+            @Override
+            protected void updateItem(String value, boolean empty) {
+                super.updateItem(value, empty);
+                if (empty || getTableRow() == null || getTableRow().getItem() == null) {
+                    setGraphic(null);
+                    return;
+                }
+                Map<String, Object> assignment = getTableRow().getItem();
+                Button start = compactButton("Start Diagnosis", "scan.png");
+                start.setOnAction(e -> {
+                    selectedDiagnosisPatientId = Json.asString(assignment.get("patient_id"));
+                    showDoctorUpload();
+                });
+                HBox box = new HBox(start);
                 box.setAlignment(Pos.CENTER_LEFT);
                 setGraphic(box);
             }
@@ -814,16 +1155,20 @@ public class App extends Application {
         Label prediction = sectionTitle("Result: " + Json.asString(scan.get("prediction")));
         Label confidence = muted(
                 "Confidence: " + percent(scan.get("confidence")) + "   Risk: " + Json.asString(scan.get("risk_level")));
-        Button generate = primaryButton("Generate PDF Report");
-        generate.setGraphic(iconGraphic("print.png", 18));
         Button preview = ghostButton("Preview Report");
-        preview.setGraphic(iconGraphic("eye.png", 18));
+        preview.setGraphic(iconGraphic("eye.png", 20));
         Button download = ghostButton("Download Report");
-        download.setGraphic(iconGraphic("download.png", 18));
-        generate.setOnAction(e -> generateReportForScan(scan, false));
+        download.setGraphic(iconGraphic("download.png", 20));
         preview.setOnAction(e -> previewReportForScan(scan));
         download.setOnAction(e -> downloadReportForScan(scan));
-        HBox actions = new HBox(10, generate, preview, download);
+        HBox actions = new HBox(10);
+        if (isAdmin() || isDoctor()) {
+            Button generate = primaryButton("Generate PDF Report");
+            generate.setGraphic(iconGraphic("print.png", 22));
+            generate.setOnAction(e -> generateReportForScan(scan, false));
+            actions.getChildren().add(generate);
+        }
+        actions.getChildren().addAll(preview, download);
         String heatmapUrl = Json.asString(scan.get("heatmap_image_url"));
         if (!heatmapUrl.isBlank()) {
             ImageView view = new ImageView(new Image(heatmapUrl, true));
@@ -906,6 +1251,133 @@ public class App extends Application {
         }
     }
 
+    private void showAdminUserViewDialog(String type, Map<String, Object> item) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("View " + capitalize(type));
+        VBox box = card();
+        box.getChildren().addAll(
+                sectionTitle(capitalize(type) + " Details"),
+                muted(type.equals("doctor") ? "Doctor ID: " + Json.asString(item.get("doctor_id"))
+                        : "Patient ID: " + Json.asString(item.get("patient_id"))),
+                muted("Name: " + fullName(item)),
+                muted("Username: " + Json.asString(item.get("username"))),
+                muted("Email: " + Json.asString(item.get("email"))),
+                muted("Phone: " + Json.asString(item.get("phone_number"))),
+                muted("Age: " + Json.asString(item.get("age"))),
+                muted("Gender: " + Json.asString(item.get("gender"))),
+                muted("Specialization: " + Json.asString(item.get("specialization"))),
+                muted("Condition: " + Json.asString(item.get("primary_condition"))));
+        dialog.getDialogPane().setContent(box);
+        dialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CLOSE);
+        dialog.showAndWait();
+    }
+
+    private void showAdminUserEditDialog(String type, Map<String, Object> item) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Edit " + capitalize(type));
+        VBox box = new VBox(12);
+        box.setPadding(new Insets(16));
+        TextField username = input("Username");
+        username.setText(Json.asString(item.get("username")));
+        TextField email = input("Email");
+        email.setText(Json.asString(item.get("email")));
+        TextField first = input("First Name");
+        first.setText(Json.asString(item.get("first_name")));
+        TextField last = input("Last Name");
+        last.setText(Json.asString(item.get("last_name")));
+        TextField phone = input("Phone Number");
+        phone.setText(Json.asString(item.get("phone_number")));
+        TextField age = input("Age");
+        age.setText(Json.asString(item.get("age")));
+        TextField gender = input("Gender");
+        gender.setText(Json.asString(item.get("gender")));
+        TextField specialization = input("Specialization");
+        specialization.setText(Json.asString(item.get("specialization")));
+        TextField condition = input("Primary Condition");
+        condition.setText(Json.asString(item.get("primary_condition")));
+        Button save = primaryButton("Save Changes");
+        box.getChildren().addAll(username, email, first, last, phone, age, gender);
+        if ("doctor".equals(type)) {
+            box.getChildren().add(specialization);
+        } else {
+            box.getChildren().add(condition);
+        }
+        box.getChildren().add(save);
+        dialog.getDialogPane().setContent(box);
+        dialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CLOSE);
+        save.setOnAction(e -> runAsync(null, () -> {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("username", username.getText());
+            body.put("email", email.getText());
+            body.put("first_name", first.getText());
+            body.put("last_name", last.getText());
+            body.put("phone_number", phone.getText());
+            Integer parsedAge = parseInt(age.getText());
+            if (parsedAge != null) {
+                body.put("age", parsedAge);
+            }
+            body.put("gender", gender.getText());
+            if ("doctor".equals(type)) {
+                body.put("specialization", specialization.getText());
+                api.patchJson("/api/admin/doctors/" + Json.asString(item.get("id")) + "/", body);
+            } else {
+                body.put("primary_condition", condition.getText());
+                api.patchJson("/api/admin/patients/" + Json.asString(item.get("id")) + "/", body);
+            }
+            Platform.runLater(() -> {
+                dialog.close();
+                if ("doctor".equals(type)) {
+                    showManageDoctors();
+                } else {
+                    showManagePatients();
+                }
+            });
+        }));
+        dialog.showAndWait();
+    }
+
+    private void deleteAdminUser(String type, Map<String, Object> item) {
+        if (!confirm("Delete " + type, "Are you sure you want to delete this " + type + "?")) {
+            return;
+        }
+        runAsync(null, () -> {
+            if ("doctor".equals(type)) {
+                api.delete("/api/admin/doctors/" + Json.asString(item.get("id")) + "/");
+                Platform.runLater(this::showManageDoctors);
+            } else {
+                api.delete("/api/admin/patients/" + Json.asString(item.get("id")) + "/");
+                Platform.runLater(this::showManagePatients);
+            }
+        });
+    }
+
+    private void editReportForScan(Map<String, Object> scan) {
+        runAsync(null, () -> {
+            Map<String, Object> report = ensureReport(scan);
+            String reportId = Json.asString(report.get("id"));
+            api.patchJson("/api/admin/reports/" + reportId + "/", Map.of("regenerate_pdf", true));
+            Platform.runLater(() -> alert("Report updated successfully."));
+        });
+    }
+
+    private void deleteReportForScan(Map<String, Object> scan) {
+        if (!confirm("Delete report", "Are you sure you want to delete this report?")) {
+            return;
+        }
+        Object existing = scan.get("report_id");
+        if (existing == null || Json.asString(existing).isBlank()) {
+            alert("No saved report exists for this scan yet.");
+            return;
+        }
+        runAsync(null, () -> {
+            api.delete("/api/admin/reports/" + Json.asString(existing) + "/");
+            Platform.runLater(() -> {
+                alert("Report deleted successfully.");
+                showAdminReports();
+            });
+        });
+    }
+
     private VBox card() {
         VBox box = new VBox(14);
         box.getStyleClass().add("card");
@@ -958,7 +1430,7 @@ public class App extends Application {
         Button button = new Button(text);
         button.getStyleClass().add("compact-button");
         if (iconFile != null) {
-            button.setGraphic(iconGraphic(iconFile, 18));
+            button.setGraphic(iconGraphic(iconFile, 20));
         }
         return button;
     }
@@ -1039,6 +1511,18 @@ public class App extends Application {
         return name.isBlank() ? Json.asString(currentUser.get("username")) : name;
     }
 
+    private String currentRole() {
+        return Json.asString(currentUser.get("role"));
+    }
+
+    private boolean isAdmin() {
+        return "admin".equalsIgnoreCase(currentRole());
+    }
+
+    private boolean isDoctor() {
+        return "doctor".equalsIgnoreCase(currentRole());
+    }
+
     private String userInitial() {
         String name = displayName();
         return name.isBlank() ? "U" : name.substring(0, 1).toUpperCase();
@@ -1086,6 +1570,33 @@ public class App extends Application {
             number *= 100.0;
         }
         return String.format("%.1f%%", number);
+    }
+
+    private String formatApiDate(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        DateTimeFormatter output = DateTimeFormatter.ofPattern("MMMM d, yyyy, h:mm a");
+        try {
+            return OffsetDateTime.parse(value).format(output);
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            return LocalDateTime.parse(value).format(output);
+        } catch (DateTimeParseException ignored) {
+        }
+        try {
+            String cleaned = value.replace("T", " ");
+            if (cleaned.contains(".")) {
+                cleaned = cleaned.substring(0, cleaned.indexOf('.'));
+            }
+            if (cleaned.contains(" ")) {
+                return LocalDateTime.parse(cleaned, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")).format(output);
+            }
+            return LocalDate.parse(cleaned).format(DateTimeFormatter.ofPattern("MMMM d, yyyy"));
+        } catch (DateTimeParseException ignored) {
+        }
+        return value;
     }
 
     private String value(ComboBox<String> combo) {
@@ -1142,6 +1653,14 @@ public class App extends Application {
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
+    }
+
+    private boolean confirm(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        return alert.showAndWait().filter(button -> button == javafx.scene.control.ButtonType.OK).isPresent();
     }
 
     @FunctionalInterface

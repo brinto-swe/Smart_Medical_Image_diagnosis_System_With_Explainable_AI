@@ -18,9 +18,12 @@ from accounts.views import (
     SignupView,
 )
 from diagnosis.views import (
+    AdminDoctorAssignmentView,
     AdminReportSummaryView,
+    DoctorAssignedPatientsView,
     DoctorPatientSearchView,
     GenerateMedicalReportView,
+    MedicalReportDetailView,
     MedicalReportFileView,
     MedicalReportListView,
     PatientHistoryView,
@@ -47,7 +50,10 @@ urlpatterns = [
     path("api/admin/patients/<int:pk>/", PatientDetailView.as_view(), name="admin-patient-detail"),
     path("api/admin/users/<int:user_id>/role/", RoleChangeView.as_view(), name="admin-role-change"),
     path("api/admin/reports/summary/", AdminReportSummaryView.as_view(), name="admin-report-summary"),
+    path("api/admin/reports/<int:report_id>/", MedicalReportDetailView.as_view(), name="medical-report-detail"),
+    path("api/admin/assignments/", AdminDoctorAssignmentView.as_view(), name="admin-assignments"),
     path("api/doctor/patients/search/", DoctorPatientSearchView.as_view(), name="doctor-patient-search"),
+    path("api/doctor/assignments/", DoctorAssignedPatientsView.as_view(), name="doctor-assignments"),
     path("api/doctor/xray/upload/", PredictXrayView.as_view(), name="doctor-xray-upload"),
     path("api/scans/", ScanListView.as_view(), name="scan-list"),
     path("api/scans/recent/", RecentScanListView.as_view(), name="recent-scans"),

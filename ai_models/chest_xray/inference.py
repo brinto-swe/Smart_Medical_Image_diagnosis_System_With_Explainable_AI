@@ -14,7 +14,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "checkpoints", "best_model.pt")
 
-# 🔥 Lazy model loading (IMPORTANT)
+# 🔥 Lazy loading
 model = None
 gradcam = None
 
@@ -44,10 +44,11 @@ transform = transforms.Compose([
 ])
 
 
-def get_risk(conf):
-    if conf < 0.6:
+# ✅ FIXED: Risk based on pneumonia probability (NOT confidence)
+def get_risk(pneumonia_prob):
+    if pneumonia_prob < 0.3:
         return "LOW"
-    elif conf < 0.8:
+    elif pneumonia_prob < 0.7:
         return "MEDIUM"
     else:
         return "HIGH"
@@ -59,27 +60,32 @@ def predict(image_path):
     image = Image.open(image_path).convert("RGB")
     input_tensor = transform(image).unsqueeze(0).to(DEVICE)
 
-    output = model(input_tensor)
-    probs = torch.softmax(output, dim=1)
+    with torch.no_grad():
+        output = model(input_tensor)
+        probs = torch.softmax(output, dim=1)
 
     pred_class = torch.argmax(probs, dim=1).item()
     confidence = probs[0][pred_class].item()
+
+    # 🔥 KEY FIX
+    pneumonia_prob = probs[0][1].item()
+    risk = get_risk(pneumonia_prob)
 
     cam = gradcam.generate(input_tensor, pred_class)
     overlay = overlay_heatmap(image_path, cam)
 
     label = "PNEUMONIA" if pred_class == 1 else "NORMAL"
-    risk = get_risk(confidence)
 
     return {
         "prediction": label,
         "confidence": round(confidence, 4),
+        "pneumonia_probability": round(pneumonia_prob, 4),
         "risk_level": risk,
         "heatmap": overlay
     }
 
 
-# 🔥 Standalone testing only
+# 🔥 Standalone test
 if __name__ == "__main__":
     img_path = "test_image.jpeg"
 
@@ -89,4 +95,5 @@ if __name__ == "__main__":
 
     print("Prediction:", result["prediction"])
     print("Confidence:", result["confidence"])
+    print("Pneumonia Probability:", result["pneumonia_probability"])
     print("Risk Level:", result["risk_level"])

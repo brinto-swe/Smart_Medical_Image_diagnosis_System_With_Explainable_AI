@@ -80,6 +80,14 @@ public class Json {
         return result;
     }
 
+    @SuppressWarnings("unchecked")
+    public static List<Object> asList(Object value) {
+        if (value instanceof List<?> list) {
+            return (List<Object>) list;
+        }
+        return new ArrayList<>();
+    }
+
     private static String escape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
     }

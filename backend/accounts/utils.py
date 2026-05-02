@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from .models import ADMIN_GROUP, ROLE_GROUPS
+from .models import ADMIN_GROUP, DOCTOR_GROUP, PATIENT_GROUP, ROLE_GROUPS
 
 
 def ensure_role_groups():
@@ -38,3 +38,35 @@ def generate_identifier(prefix, field_name):
     else:
         number = 1
     return f"{prefix}{number:03d}"
+
+
+def ensure_user_role_identifier(user):
+    update_fields = []
+    if user.groups.filter(name=DOCTOR_GROUP).exists() and not user.doctor_id:
+        user.doctor_id = generate_identifier("D", "doctor_id")
+        update_fields.append("doctor_id")
+    if user.groups.filter(name=PATIENT_GROUP).exists() and not user.patient_id:
+        user.patient_id = generate_identifier("P", "patient_id")
+        update_fields.append("patient_id")
+    if update_fields:
+        user.save(update_fields=update_fields)
+    return user
+
+
+def ensure_group_identifiers(group_name):
+    User = get_user_model()
+    ensure_role_groups()
+    if group_name == DOCTOR_GROUP:
+        users = User.objects.filter(groups__name=DOCTOR_GROUP, doctor_id__isnull=True)
+        users = list(users) + list(User.objects.filter(groups__name=DOCTOR_GROUP, doctor_id=""))
+    elif group_name == PATIENT_GROUP:
+        users = User.objects.filter(groups__name=PATIENT_GROUP, patient_id__isnull=True)
+        users = list(users) + list(User.objects.filter(groups__name=PATIENT_GROUP, patient_id=""))
+    else:
+        users = []
+    seen = set()
+    for user in users:
+        if user.pk in seen:
+            continue
+        seen.add(user.pk)
+        ensure_user_role_identifier(user)

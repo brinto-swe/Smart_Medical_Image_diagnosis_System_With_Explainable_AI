@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import MedicalReport, ScanResult
+from .models import DoctorAssignment, MedicalReport, ScanResult
 
 
 class ScanResultSerializer(serializers.ModelSerializer):
@@ -106,3 +106,51 @@ class MedicalReportSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         url = obj.report_pdf.url
         return request.build_absolute_uri(url) if request else url
+
+
+class DoctorAssignmentSerializer(serializers.ModelSerializer):
+    patient_id = serializers.CharField(source="patient.patient_id", read_only=True)
+    patient_name = serializers.SerializerMethodField()
+    doctor_id = serializers.CharField(source="doctor.doctor_id", read_only=True)
+    doctor_name = serializers.SerializerMethodField()
+    assigned_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DoctorAssignment
+        fields = [
+            "id",
+            "patient",
+            "patient_id",
+            "patient_name",
+            "doctor",
+            "doctor_id",
+            "doctor_name",
+            "assigned_by",
+            "assigned_by_name",
+            "scheduled_at",
+            "notes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "patient_id",
+            "patient_name",
+            "doctor_id",
+            "doctor_name",
+            "assigned_by",
+            "assigned_by_name",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_patient_name(self, obj):
+        return obj.patient.get_full_name() or obj.patient.username
+
+    def get_doctor_name(self, obj):
+        return obj.doctor.get_full_name() or obj.doctor.username
+
+    def get_assigned_by_name(self, obj):
+        if not obj.assigned_by:
+            return ""
+        return obj.assigned_by.get_full_name() or obj.assigned_by.username
