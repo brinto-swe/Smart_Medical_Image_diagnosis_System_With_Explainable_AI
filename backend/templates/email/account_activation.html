@@ -1,0 +1,14 @@
+{% extends "email/base_branded.html" %}
+
+{% block content %}
+  <p style="margin:0 0 16px 0; font-size:18px; line-height:28px; color:#111827; font-weight:700;">
+    Hello {{ patient_name }} !
+  </p>
+  <p style="margin:0 0 14px 0; font-size:16px; line-height:26px; color:#42526b;">
+    Please confirm your email and get an appointment for diagnosis.
+    We are wishing you best from Medical Diagnosis Center.
+  </p>
+  <p style="margin:0; font-size:14px; line-height:22px; color:#6b7d92;">
+    This verification keeps your patient account secure and lets you sign in to the Medical Diagnosis Center portal.
+  </p>
+{% endblock %}

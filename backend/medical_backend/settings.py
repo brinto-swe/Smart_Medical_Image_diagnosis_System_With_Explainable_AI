@@ -14,10 +14,13 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = BASE_DIR.parent
 sys.path.append(str(PROJECT_ROOT))
+load_dotenv(BASE_DIR / ".env")
 
 
 def env_bool(name, default=False):
@@ -28,12 +31,16 @@ def env_bool(name, default=False):
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-08)t6is8g#q502m(f&+_z0d_z!mo%#j&a4!ytnketmg*ffm$t-'
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-local-dev-key")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env_bool("DEBUG", True)
 
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",") if os.environ.get("ALLOWED_HOSTS") else []
+ALLOWED_HOSTS = (
+    os.environ.get("ALLOWED_HOSTS", "").split(",")
+    if os.environ.get("ALLOWED_HOSTS")
+    else ["127.0.0.1", "localhost", "testserver"]
+)
 
 AUTH_USER_MODEL = 'accounts.User'
 # Application definition
@@ -47,6 +54,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework.authtoken',
+    'djoser',
     'accounts.apps.AccountsConfig',
     'diagnosis',
 ]
@@ -93,11 +101,11 @@ WSGI_APPLICATION = 'medical_backend.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'medical_ai_db',
-        'USER': 'postgres',
-        'PASSWORD': 'admin',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': os.environ.get("DB_NAME", "medical_ai_db"),
+        'USER': os.environ.get("DB_USER", "postgres"),
+        'PASSWORD': os.environ.get("DB_PASSWORD", "admin"),
+        'HOST': os.environ.get("DB_HOST", "localhost"),
+        'PORT': os.environ.get("DB_PORT", "5432"),
     }
 }
 
@@ -154,6 +162,14 @@ EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER or "noreply@medicare.local")
 FRONTEND_PASSWORD_RESET_URL = os.environ.get("FRONTEND_PASSWORD_RESET_URL", "")
+BACKEND_PUBLIC_PROTOCOL = os.environ.get("BACKEND_PUBLIC_PROTOCOL", "http")
+BACKEND_PUBLIC_DOMAIN = os.environ.get("BACKEND_PUBLIC_DOMAIN", "127.0.0.1:8000")
+EMAIL_LOGO_PATH = os.environ.get(
+    "EMAIL_LOGO_PATH",
+    str(PROJECT_ROOT / "frontend" / "MedicalDiagnosisGUI" / "icons" / "logo.png"),
+)
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_ASSISTANT_MODEL = os.environ.get("OPENAI_ASSISTANT_MODEL", "gpt-4.1-mini")
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -163,4 +179,16 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+}
+
+DJOSER = {
+    "LOGIN_FIELD": "username",
+    "SEND_ACTIVATION_EMAIL": True,
+    "ACTIVATION_URL": "api/auth/activate/{uid}/{token}/",
+    "EMAIL_FRONTEND_PROTOCOL": BACKEND_PUBLIC_PROTOCOL,
+    "EMAIL_FRONTEND_DOMAIN": BACKEND_PUBLIC_DOMAIN,
+    "EMAIL_FRONTEND_SITE_NAME": "MediCare",
+    "SERIALIZERS": {
+        "user_create": "accounts.djoser_serializers.PatientSignupSerializer",
+    },
 }

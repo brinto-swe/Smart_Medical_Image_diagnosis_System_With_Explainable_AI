@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import DoctorAssignment, MedicalReport, ScanResult
+from .models import DoctorAssignment, MedicalReport, Notification, ScanResult
 
 
 class ScanResultSerializer(serializers.ModelSerializer):
@@ -154,3 +154,22 @@ class DoctorAssignmentSerializer(serializers.ModelSerializer):
         if not obj.assigned_by:
             return ""
         return obj.assigned_by.get_full_name() or obj.assigned_by.username
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    assignment_id = serializers.IntegerField(source="assignment.id", read_only=True)
+    report_id = serializers.IntegerField(source="report.id", read_only=True)
+
+    class Meta:
+        model = Notification
+        fields = [
+            "id",
+            "title",
+            "message",
+            "event_type",
+            "is_read",
+            "created_at",
+            "assignment_id",
+            "report_id",
+        ]
+        read_only_fields = fields

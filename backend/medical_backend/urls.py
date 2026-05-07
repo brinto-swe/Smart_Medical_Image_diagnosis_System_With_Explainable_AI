@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.urls import path
 
 from accounts.views import (
+    ActivateAccountLinkView,
     ChangePasswordView,
     DoctorDetailView,
     DoctorListCreateView,
@@ -20,12 +21,16 @@ from accounts.views import (
 from diagnosis.views import (
     AdminDoctorAssignmentView,
     AdminReportSummaryView,
+    AssignmentListView,
     DoctorAssignedPatientsView,
     DoctorPatientSearchView,
     GenerateMedicalReportView,
     MedicalReportDetailView,
     MedicalReportFileView,
     MedicalReportListView,
+    NotificationListView,
+    NotificationMarkReadView,
+    PatientAssistantView,
     PatientHistoryView,
     PredictXrayView,
     RecentScanListView,
@@ -38,6 +43,7 @@ from diagnosis.views import (
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/signup/", SignupView.as_view(), name="signup"),
+    path("api/auth/activate/<str:uid>/<str:token>/", ActivateAccountLinkView.as_view(), name="activate-account-link"),
     path("api/auth/login/", LoginView.as_view(), name="login"),
     path("api/auth/logout/", LogoutView.as_view(), name="logout"),
     path("api/auth/password-reset/", PasswordResetRequestView.as_view(), name="password-reset"),
@@ -52,9 +58,13 @@ urlpatterns = [
     path("api/admin/reports/summary/", AdminReportSummaryView.as_view(), name="admin-report-summary"),
     path("api/admin/reports/<int:report_id>/", MedicalReportDetailView.as_view(), name="medical-report-detail"),
     path("api/admin/assignments/", AdminDoctorAssignmentView.as_view(), name="admin-assignments"),
+    path("api/assignments/", AssignmentListView.as_view(), name="assignment-list"),
+    path("api/notifications/", NotificationListView.as_view(), name="notification-list"),
+    path("api/notifications/mark-read/", NotificationMarkReadView.as_view(), name="notification-mark-read"),
     path("api/doctor/patients/search/", DoctorPatientSearchView.as_view(), name="doctor-patient-search"),
     path("api/doctor/assignments/", DoctorAssignedPatientsView.as_view(), name="doctor-assignments"),
     path("api/doctor/xray/upload/", PredictXrayView.as_view(), name="doctor-xray-upload"),
+    path("api/patient/assistant/", PatientAssistantView.as_view(), name="patient-assistant"),
     path("api/scans/", ScanListView.as_view(), name="scan-list"),
     path("api/scans/recent/", RecentScanListView.as_view(), name="recent-scans"),
     path("api/scans/<int:pk>/", ScanDetailView.as_view(), name="scan-detail"),

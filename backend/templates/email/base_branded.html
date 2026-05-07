@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ brand_name }}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#eaf8ff; font-family:Arial, Helvetica, sans-serif; color:#1f2937;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0;">{{ preheader }}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eaf8ff; padding:34px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;">
+            <tr>
+              <td align="center" style="padding:0 0 18px 0;">
+                <img src="cid:{{ logo_cid }}" alt="{{ brand_name }}" width="96" style="display:block; width:96px; max-width:96px; height:auto; margin:0 auto 10px auto;">
+                <div style="font-size:18px; line-height:24px; font-weight:800; color:#064b73; letter-spacing:.2px;">{{ brand_name }}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="background:#ffffff; border:1px solid #d7eaf7; border-radius:14px; box-shadow:0 12px 30px rgba(15,23,42,.08); padding:0;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="background:#f4fbff; border-bottom:1px solid #d7eaf7; border-radius:14px 14px 0 0; padding:30px 28px; text-align:center;">
+                      <div style="font-size:42px; line-height:42px; color:#0788c8; margin-bottom:12px;">{{ icon }}</div>
+                      <h1 style="margin:0; font-size:30px; line-height:38px; color:#111827; font-weight:800;">{{ heading }}</h1>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:32px 34px 14px 34px;">
+                      {% block content %}{% endblock %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td align="center" style="padding:10px 34px 34px 34px;">
+                      <a href="{{ button_url }}" style="display:inline-block; background:linear-gradient(90deg,#25aae1,#4481eb,#04befe,#3f86ed); color:#ffffff; text-decoration:none; font-weight:800; font-size:16px; line-height:20px; padding:15px 30px; border-radius:999px; box-shadow:0 8px 18px rgba(65,132,234,.34);">{{ button_text }}</a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:22px 20px 0 20px; color:#526175; font-size:13px; line-height:20px;">
+                <p style="margin:0 0 8px 0;">This message was sent by {{ brand_name }}.</p>
+                <p style="margin:0;">If the button does not work, copy and paste this link into your browser:</p>
+                <p style="margin:8px 0 0 0; word-break:break-all;">
+                  <a href="{{ button_url }}" style="color:#0969da; text-decoration:underline;">{{ button_url }}</a>
+                </p>
+                {% if support_email %}
+                  <p style="margin:18px 0 0 0;">Need help? Contact us at {{ support_email }}.</p>
+                {% endif %}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -111,10 +111,11 @@ public class ApiClient {
         return target.toFile();
     }
 
-    public Map<String, Object> uploadXray(String patientId, File image) throws Exception {
+    public Map<String, Object> uploadXray(String patientId, String scanType, File image) throws Exception {
         String boundary = "----MediCareBoundary" + System.currentTimeMillis();
         List<byte[]> chunks = new ArrayList<>();
         addField(chunks, boundary, "patient_id", patientId);
+        addField(chunks, boundary, "scan_type", scanType);
         addFile(chunks, boundary, "image", image);
         chunks.add(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
 
@@ -163,11 +164,26 @@ public class ApiClient {
         }
 
         HttpResponse<String> response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
-        Object parsed = response.body() == null || response.body().isBlank() ? Map.of() : Json.parse(response.body());
+        Object parsed = parseResponseBody(response.body());
         if (response.statusCode() >= 400) {
             throw new RuntimeException(errorMessage(parsed, response.statusCode()));
         }
         return parsed;
+    }
+
+    private Object parseResponseBody(String body) {
+        if (body == null || body.isBlank()) {
+            return Map.of();
+        }
+        String trimmed = body.trim();
+        if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+            return Map.of("error", "Server returned an unexpected response. Please check the backend console.");
+        }
+        try {
+            return Json.parse(trimmed);
+        } catch (RuntimeException ex) {
+            return Map.of("error", "Could not read server response. Please try again.");
+        }
     }
 
     private String errorMessage(Object parsed, int status) {

@@ -1,5 +1,6 @@
 import os
 import tempfile
+from datetime import date, datetime, time, timedelta
 
 import cv2
 from django.contrib.auth import get_user_model
@@ -10,7 +11,7 @@ from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
-from rest_framework import generics, status
+from rest_framework import generics, permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,10 +21,17 @@ from accounts.serializers import UserProfileSerializer
 from accounts.utils import ensure_group_identifiers, user_has_group
 from ai_models.chest_xray.inference import predict
 
-from .models import DoctorAssignment, MedicalReport, ScanResult
-from .permissions import IsAdminDoctorOrPatient, IsAdminOrDoctor, IsAdminUserGroup, IsDoctorUserGroup
+from .assistant import ask_patient_assistant, opening_message_for_patient
+from .models import DoctorAssignment, MedicalReport, Notification, ScanResult
+from .permissions import (
+    IsAdminDoctorOrPatient,
+    IsAdminOrDoctor,
+    IsAdminUserGroup,
+    IsDoctorUserGroup,
+    IsPatientUserGroup,
+)
 from .reporting import build_medical_report_pdf
-from .serializers import DoctorAssignmentSerializer, MedicalReportSerializer, ScanResultSerializer
+from .serializers import DoctorAssignmentSerializer, MedicalReportSerializer, NotificationSerializer, ScanResultSerializer
 
 
 User = get_user_model()
@@ -62,6 +70,17 @@ def assignment_queryset_for_user(user):
     return queryset.filter(patient=user)
 
 
+def notify_user(recipient, title, message, event_type="", assignment=None, report=None):
+    return Notification.objects.create(
+        recipient=recipient,
+        title=title,
+        message=message,
+        event_type=event_type,
+        assignment=assignment,
+        report=report,
+    )
+
+
 def analytics_period_config(period):
     normalized = (period or "monthly").strip().lower()
     config = {
@@ -76,19 +95,46 @@ def analytics_period_config(period):
 
 
 def chart_points(queryset, field_name, period):
-    _, truncator, label_format = analytics_period_config(period)
+    normalized_period, truncator, label_format = analytics_period_config(period)
     rows = (
         queryset.annotate(bucket=truncator(field_name))
         .values("bucket")
         .annotate(total=Count("id"))
         .order_by("bucket")
     )
-    labels = []
-    values = []
+
+    now = timezone.localtime()
+    if normalized_period == "day":
+        bucket_dates = [now.date() - timedelta(days=offset) for offset in range(6, -1, -1)]
+    elif normalized_period == "week":
+        start_of_week = now.date() - timedelta(days=now.date().weekday())
+        bucket_dates = [start_of_week - timedelta(weeks=offset) for offset in range(7, -1, -1)]
+    else:
+        bucket_dates = []
+        year = now.year
+        month = now.month
+        for offset in range(5, -1, -1):
+            target_month = month - offset
+            target_year = year
+            while target_month <= 0:
+                target_month += 12
+                target_year -= 1
+            bucket_dates.append(date(target_year, target_month, 1))
+
+    totals_by_bucket = {}
     for row in rows:
         bucket = row["bucket"]
-        labels.append(timezone.localtime(bucket).strftime(label_format) if timezone.is_aware(bucket) else bucket.strftime(label_format))
-        values.append(row["total"])
+        bucket_dt = timezone.localtime(bucket) if timezone.is_aware(bucket) else bucket
+        if normalized_period == "day":
+            key = bucket_dt.date()
+        elif normalized_period == "week":
+            key = bucket_dt.date() - timedelta(days=bucket_dt.date().weekday())
+        else:
+            key = date(bucket_dt.year, bucket_dt.month, 1)
+        totals_by_bucket[key] = row["total"]
+
+    labels = [bucket.strftime(label_format) for bucket in bucket_dates]
+    values = [totals_by_bucket.get(bucket, 0) for bucket in bucket_dates]
     return {"labels": labels, "values": values}
 
 
@@ -118,6 +164,7 @@ class PredictXrayView(APIView):
     def post(self, request):
         image = request.FILES.get("image")
         patient_identifier = request.data.get("patient_id")
+        scan_type = (request.data.get("scan_type") or "Chest X-Ray").strip()
 
         if not image or not patient_identifier:
             return Response({"error": "image and patient_id are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -145,10 +192,12 @@ class PredictXrayView(APIView):
                 prediction=result["prediction"],
                 confidence=result["confidence"],
                 risk_level=result["risk_level"],
+                scan_type=scan_type,
                 result_json={
                     "prediction": result["prediction"],
                     "confidence": result["confidence"],
                     "risk_level": result["risk_level"],
+                    "scan_type": scan_type,
                 },
                 explanation={
                     "note": "Grad-CAM visualization generated",
@@ -313,6 +362,14 @@ class GenerateMedicalReportView(APIView):
         report.patient = scan.patient
         report.doctor = doctor
         report.report_pdf.save(f"medical_report_R{scan.id:03d}.pdf", ContentFile(pdf_buffer.read()), save=True)
+        doctor_name = doctor.get_full_name() or doctor.username
+        notify_user(
+            scan.patient,
+            "New report is ready",
+            f"Dr. {doctor_name} generated your {scan.scan_type} report.",
+            event_type="report_generated",
+            report=report,
+        )
         serializer = MedicalReportSerializer(report, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -429,8 +486,44 @@ class AdminDoctorAssignmentView(APIView):
             scheduled_at=scheduled_at,
             notes=request.data.get("notes", "").strip(),
         )
+        patient_name = patient.get_full_name() or patient.username
+        doctor_name = doctor.get_full_name() or doctor.username
+        scheduled_display = timezone.localtime(assignment.scheduled_at).strftime("%B %d, %Y at %I:%M %p")
+        notify_user(
+            doctor,
+            "New patient assigned",
+            f"{patient_name} ({patient.patient_id}) has been assigned to you for {scheduled_display}.",
+            event_type="patient_assigned",
+            assignment=assignment,
+        )
+        notify_user(
+            patient,
+            "Doctor assigned",
+            f"You have been assigned to Dr. {doctor_name} on {scheduled_display}.",
+            event_type="doctor_assigned",
+            assignment=assignment,
+        )
         serializer = DoctorAssignmentSerializer(assignment, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AssignmentListView(generics.ListAPIView):
+    serializer_class = DoctorAssignmentSerializer
+    permission_classes = [IsAdminDoctorOrPatient]
+
+    def get_queryset(self):
+        queryset = assignment_queryset_for_user(self.request.user)
+        query = self.request.query_params.get("q", "").strip()
+        if query:
+            queryset = queryset.filter(
+                Q(patient__patient_id__icontains=query)
+                | Q(patient__first_name__icontains=query)
+                | Q(patient__last_name__icontains=query)
+                | Q(doctor__doctor_id__icontains=query)
+                | Q(doctor__first_name__icontains=query)
+                | Q(doctor__last_name__icontains=query)
+            )
+        return queryset
 
 
 class DoctorAssignedPatientsView(generics.ListAPIView):
@@ -455,3 +548,40 @@ class DoctorAssignedPatientsView(generics.ListAPIView):
                 | Q(patient__username__icontains=query)
             )
         return queryset
+
+
+class NotificationListView(generics.ListAPIView):
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user).order_by("-created_at")[:30]
+
+
+class NotificationMarkReadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
+        return Response({"message": "Notifications marked as read."})
+
+
+class PatientAssistantView(APIView):
+    permission_classes = [IsPatientUserGroup]
+
+    def get(self, request):
+        return Response(opening_message_for_patient(request.user))
+
+    def post(self, request):
+        message = (request.data.get("message") or "").strip()
+        conversation = request.data.get("conversation") or []
+        if not message:
+            return Response({"error": "message is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            payload = ask_patient_assistant(request.user, message=message, conversation=conversation)
+            return Response(payload)
+        except Exception:
+            return Response(
+                {"error": "The assistant could not answer right now. Please try again in a moment."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )

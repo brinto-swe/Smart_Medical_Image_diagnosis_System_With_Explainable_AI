@@ -90,3 +90,36 @@ class DoctorAssignment(models.Model):
         patient_name = self.patient.get_full_name() or self.patient.username
         doctor_name = self.doctor.get_full_name() or self.doctor.username
         return f"{patient_name} -> {doctor_name} @ {self.scheduled_at:%Y-%m-%d %H:%M}"
+
+
+class Notification(models.Model):
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    title = models.CharField(max_length=160)
+    message = models.TextField()
+    event_type = models.CharField(max_length=50, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    assignment = models.ForeignKey(
+        DoctorAssignment,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="notifications",
+    )
+    report = models.ForeignKey(
+        MedicalReport,
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+        related_name="notifications",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.recipient}: {self.title}"

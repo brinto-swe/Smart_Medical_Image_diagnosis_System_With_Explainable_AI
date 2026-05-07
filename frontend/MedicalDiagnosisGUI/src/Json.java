@@ -59,6 +59,14 @@ public class Json {
         }
     }
 
+    public static boolean asBoolean(Object value) {
+        if (value instanceof Boolean flag) {
+            return flag;
+        }
+        String text = asString(value).trim().toLowerCase();
+        return text.equals("true") || text.equals("1") || text.equals("yes") || text.equals("on");
+    }
+
     @SuppressWarnings("unchecked")
     public static Map<String, Object> asObject(Object value) {
         if (value instanceof Map<?, ?>) {

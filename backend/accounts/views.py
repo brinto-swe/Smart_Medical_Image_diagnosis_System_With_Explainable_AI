@@ -1,19 +1,18 @@
-from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.db import models
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from django.urls import reverse
 from django.utils.encoding import force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_decode
+from djoser import signals
 from rest_framework import generics, permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .email_utils import send_activation_email, send_password_reset_email
 from .models import ADMIN_GROUP, DOCTOR_GROUP, PATIENT_GROUP
 from .serializers import (
     AdminUserCreateSerializer,
@@ -41,13 +40,15 @@ class SignupView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
     def create(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        user = User.objects.get(pk=response.data["id"])
-        token, _ = Token.objects.get_or_create(user=user)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        signals.user_registered.send(sender=self.__class__, user=user, request=request)
+        send_activation_email(request, user)
         return Response(
             {
-                "token": token.key,
-                "user": UserProfileSerializer(user, context={"request": request}).data,
+                "message": "Registration successful. Please check your email to activate your account.",
+                "email": user.email,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -57,13 +58,24 @@ class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        username = request.data.get("username")
+        identifier = (request.data.get("username") or request.data.get("email") or "").strip()
         password = request.data.get("password")
-        user = authenticate(request, username=username, password=password)
+        matched_user = User.objects.filter(email__iexact=identifier).first()
+        login_username = matched_user.username if matched_user else identifier
+        user = authenticate(request, username=login_username, password=password)
         if not user:
+            inactive_user = matched_user or User.objects.filter(username=identifier).first()
+            if inactive_user and not inactive_user.is_active and inactive_user.check_password(password):
+                return Response(
+                    {"error": "Please activate your account from the verification email before logging in."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             return Response({"error": "Invalid credentials"}, status=status.HTTP_400_BAD_REQUEST)
         if not user.is_active:
-            return Response({"error": "User account is disabled."}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {"error": "Please activate your account from the verification email before logging in."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         token, _ = Token.objects.get_or_create(user=user)
         return Response(
@@ -118,23 +130,7 @@ class PasswordResetRequestView(APIView):
         email = serializer.validated_data["email"]
         user = User.objects.filter(email__iexact=email, is_active=True).first()
         if user:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            api_path = reverse("password-reset-confirm")
-            reset_url = getattr(settings, "FRONTEND_PASSWORD_RESET_URL", "")
-            if reset_url:
-                link = f"{reset_url}?uid={uid}&token={token}"
-            else:
-                link = request.build_absolute_uri(api_path)
-                link = f"{link}?uid={uid}&token={token}"
-
-            send_mail(
-                "Reset your MediCare password",
-                f"Use this link to reset your password: {link}",
-                settings.DEFAULT_FROM_EMAIL,
-                [email],
-                fail_silently=False,
-            )
+            send_password_reset_email(request, user)
         return Response({"message": "If the email exists, a reset link has been sent."})
 
 
@@ -159,6 +155,70 @@ class PasswordResetConfirmView(APIView):
         user.save(update_fields=["password", "must_change_password"])
         Token.objects.filter(user=user).delete()
         return Response({"message": "Password reset successfully."})
+
+
+class ActivateAccountLinkView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, uid, token):
+        try:
+            user_id = force_str(urlsafe_base64_decode(uid))
+            user = User.objects.get(pk=user_id)
+            if user.is_active or not default_token_generator.check_token(user, token):
+                raise ValueError("invalid activation token")
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+            signals.user_activated.send(sender=self.__class__, user=user, request=request)
+            message = (
+                "<h2>Account activated successfully</h2>"
+                "<p>Your patient account is now active. You can return to the MediCare desktop app and sign in.</p>"
+            )
+        except Exception:
+            message = (
+                "<h2>Activation link is invalid or already used</h2>"
+                "<p>Please request a new activation email or contact support if the problem continues.</p>"
+            )
+
+        return HttpResponse(
+            f"""
+            <html>
+              <head>
+                <title>MediCare Activation</title>
+                <style>
+                  body {{
+                    font-family: Arial, Helvetica, sans-serif;
+                    background: #f6f8fb;
+                    color: #1f2937;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    min-height: 100vh;
+                    margin: 0;
+                  }}
+                  .card {{
+                    background: white;
+                    border: 1px solid #e5eaf0;
+                    border-radius: 12px;
+                    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+                    padding: 32px;
+                    max-width: 520px;
+                  }}
+                  h2 {{
+                    margin-top: 0;
+                    color: #0f172a;
+                  }}
+                  p {{
+                    color: #526175;
+                    line-height: 1.6;
+                  }}
+                </style>
+              </head>
+              <body>
+                <div class="card">{message}</div>
+              </body>
+            </html>
+            """
+        )
 
 
 class DoctorListCreateView(generics.ListCreateAPIView):

@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 import numpy as np
@@ -63,7 +64,7 @@ class DiagnosisFlowTests(APITestCase):
 
         response = self.client.post(
             "/api/doctor/xray/upload/",
-            {"patient_id": "P001", "image": image},
+            {"patient_id": "P001", "scan_type": "CT Scan", "image": image},
             format="multipart",
         )
 
@@ -72,6 +73,7 @@ class DiagnosisFlowTests(APITestCase):
         scan = ScanResult.objects.get()
         self.assertEqual(scan.patient, self.patient)
         self.assertEqual(scan.uploaded_by, self.doctor)
+        self.assertEqual(scan.scan_type, "CT Scan")
 
     def test_patient_sees_only_own_reports(self):
         other = User.objects.create_user(username="other", password="Pass12345!", patient_id="P002")
@@ -168,6 +170,11 @@ class DiagnosisFlowTests(APITestCase):
         self.assertIn("scan_volume", response.data)
         self.assertIn("doctor_assignment_distribution", response.data)
         self.assertIn("disease_distribution", response.data)
+        self.assertGreater(len(response.data["patient_growth"]["labels"]), 1)
+        self.assertEqual(
+            len(response.data["patient_growth"]["labels"]),
+            len(response.data["patient_growth"]["values"]),
+        )
 
         self.authenticate(self.doctor)
         denied = self.client.get("/api/admin/reports/summary/?period=weekly")
@@ -312,3 +319,81 @@ class DiagnosisFlowTests(APITestCase):
 
         self.assertEqual(denied_patch.status_code, 403)
         self.assertEqual(denied_delete.status_code, 403)
+
+    def test_patient_assistant_opening_message_uses_patient_context(self):
+        self.patient.age = 42
+        self.patient.primary_condition = "Diabetes"
+        self.patient.save(update_fields=["age", "primary_condition"])
+        ScanResult.objects.create(
+            patient=self.patient,
+            uploaded_by=self.doctor,
+            original_image=SimpleUploadedFile("one.jpg", b"one", content_type="image/jpeg"),
+            prediction="NORMAL",
+            confidence=0.865,
+            risk_level="LOW",
+            scan_type="Chest X-Ray",
+        )
+
+        self.authenticate(self.patient)
+        response = self.client.get("/api/patient/assistant/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("NORMAL", response.data["reply"])
+        self.assertEqual(response.data["context"]["age"], 42)
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": ""}, clear=False)
+    def test_patient_assistant_uses_local_fallback_without_api_key(self):
+        self.patient.age = 42
+        self.patient.primary_condition = "Diabetes"
+        self.patient.save(update_fields=["age", "primary_condition"])
+
+        self.authenticate(self.patient)
+        response = self.client.post(
+            "/api/patient/assistant/",
+            {"message": "What will be my food habit?", "conversation": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("food habits", response.data["reply"].lower())
+        self.assertEqual(response.data["source"], "local_fallback")
+
+    def test_patient_assistant_is_patient_only(self):
+        self.authenticate(self.doctor)
+        response = self.client.get("/api/patient/assistant/")
+        self.assertEqual(response.status_code, 403)
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False)
+    @patch("diagnosis.assistant.OpenAI")
+    def test_patient_assistant_returns_safe_ai_reply(self, mock_openai):
+        client = mock_openai.return_value
+        client.responses.create.return_value.output_text = (
+            "Your latest result looks reassuring. I can help explain the confidence level and what symptoms to monitor."
+        )
+
+        self.authenticate(self.patient)
+        response = self.client.post(
+            "/api/patient/assistant/",
+            {"message": "What does my result mean?", "conversation": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("confidence", response.data["reply"].lower())
+
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False)
+    @patch("diagnosis.assistant.OpenAI")
+    def test_patient_assistant_blocks_medication_suggestions(self, mock_openai):
+        client = mock_openai.return_value
+        client.responses.create.return_value.output_text = "You can take paracetamol for this."
+
+        self.authenticate(self.patient)
+        response = self.client.post(
+            "/api/patient/assistant/",
+            {"message": "What should I do next?", "conversation": []},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("paracetamol", response.data["reply"].lower())
+        self.assertIn("cannot suggest medicines", response.data["reply"].lower())
