@@ -38,7 +38,7 @@ def get_dataloaders(data_dir, batch_size=16, num_workers=2):
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
-        drop_last=True
+        drop_last=False
     )
 
     return train_loader, val_loader
