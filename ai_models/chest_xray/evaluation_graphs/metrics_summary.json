@@ -1,0 +1,16 @@
+{
+  "accuracy": 0.817627,
+  "precision": 0.818728,
+  "recall": 0.817627,
+  "f1_score": 0.81747,
+  "total_samples": 1804,
+  "class_names": [
+    "NORMAL",
+    "PNEUMONIA"
+  ],
+  "class_support": {
+    "NORMAL": 902,
+    "PNEUMONIA": 902
+  },
+  "checkpoint": "/kaggle/working/checkpoints/best_model.pt"
+}

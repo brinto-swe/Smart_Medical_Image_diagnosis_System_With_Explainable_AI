@@ -1,5 +1,3 @@
-# ai_models/chest_xray/inference.py
-
 import torch
 from PIL import Image
 from torchvision import transforms
@@ -14,7 +12,6 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "checkpoints", "best_model.pt")
 
-# 🔥 Lazy loading
 model = None
 gradcam = None
 
@@ -34,7 +31,7 @@ def load_model():
     return model, gradcam
 
 
-# 🔥 Transform
+#Transform
 transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=3),
     transforms.Resize((224, 224)),
@@ -44,7 +41,7 @@ transform = transforms.Compose([
 ])
 
 
-# ✅ FIXED: Risk based on pneumonia probability (NOT confidence)
+#Risk based on pneumonia probability (NOT confidence)
 def get_risk(pneumonia_prob):
     if pneumonia_prob < 0.3:
         return "LOW"
@@ -67,7 +64,6 @@ def predict(image_path):
     pred_class = torch.argmax(probs, dim=1).item()
     confidence = probs[0][pred_class].item()
 
-    # 🔥 KEY FIX
     pneumonia_prob = probs[0][1].item()
     risk = get_risk(pneumonia_prob)
 
@@ -85,7 +81,6 @@ def predict(image_path):
     }
 
 
-# 🔥 Standalone test
 if __name__ == "__main__":
     img_path = "test_image.jpeg"
 

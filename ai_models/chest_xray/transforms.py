@@ -1,7 +1,7 @@
 from torchvision import transforms
 
 train_transforms = transforms.Compose([
-    transforms.Grayscale(num_output_channels=3),   # 🔥 FIX
+    transforms.Grayscale(num_output_channels=3),
     transforms.Resize((256, 256)),
     transforms.RandomCrop(224),
     transforms.RandomHorizontalFlip(),
@@ -13,7 +13,7 @@ train_transforms = transforms.Compose([
 ])
 
 test_transforms = transforms.Compose([
-    transforms.Grayscale(num_output_channels=3),   # 🔥 FIX
+    transforms.Grayscale(num_output_channels=3),
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406],

@@ -16,7 +16,7 @@ def convert_folder(folder):
                 ds = pydicom.dcmread(dcm_path)
                 img = ds.pixel_array.astype(float)
 
-                # Normalize
+                # Normalization
                 img = (img - np.min(img)) / (np.max(img) - np.min(img))
                 img = (img * 255).astype(np.uint8)
 
@@ -33,4 +33,4 @@ convert_folder(os.path.join(DATA_DIR, "train"))
 print("Converting VAL...")
 convert_folder(os.path.join(DATA_DIR, "val"))
 
-print("\n✅ Conversion COMPLETE!")
+print("\n Conversion COMPLETE!")

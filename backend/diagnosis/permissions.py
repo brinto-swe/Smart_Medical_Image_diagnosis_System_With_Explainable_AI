@@ -32,7 +32,5 @@ class IsAdminDoctorOrPatient(BasePermission):
             or user_has_group(request.user, PATIENT_GROUP)
         )
 
-
-# Backward-compatible aliases for old imports.
 IsAdmin = IsAdminUserGroup
 IsDoctor = IsDoctorUserGroup
